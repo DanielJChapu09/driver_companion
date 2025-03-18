@@ -20,14 +20,14 @@ class MapBoxPlace {
   MapBoxPlace({this.text, this.placeName, required this.center});
 }
 
-class MapPage extends StatefulWidget {
-  const MapPage({super.key});
+class MapTab extends StatefulWidget {
+  const MapTab({super.key});
 
   @override
-  State<MapPage> createState() => _MapPageState();
+  State<MapTab> createState() => _MapTabState();
 }
 
-class _MapPageState extends State<MapPage> {
+class _MapTabState extends State<MapTab> {
   mp.MapboxMap? mapboxMapController;
   StreamSubscription? userPositionStream;
   String currentAddress = "Fetching location...";

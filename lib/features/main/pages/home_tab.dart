@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:mymaptest/util/smart_device_box.dart';
 import 'package:mymaptest/util/my_button.dart';
 import 'package:mymaptest/pages/service_locator.dart';
@@ -9,14 +8,14 @@ import 'package:mymaptest/pages/community.dart';
 import 'package:mymaptest/pages/trends.dart';
 import 'package:mymaptest/pages/driver_behavior.dart';
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class HomeTab extends StatefulWidget {
+  const HomeTab({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomeTab> createState() => _HomeTabState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomeTabState extends State<HomeTab> {
   // padding constants
   final double horizontalPadding = 40;
   final double verticalPadding = 25;
