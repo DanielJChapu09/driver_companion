@@ -5,6 +5,7 @@ import 'package:mymaptest/features/main/controller/theme_controller.dart';
 import '../core/utils/logs.dart';
 import '../features/authentication/controller/auth_controller.dart';
 import '../features/main/controller/botton_nav_controller.dart';
+import '../features/maps/controller/campus_map_controller.dart';
 import '../widgets/snackbar/custom_snackbar.dart';
 
 class InitialBinding extends Bindings {
@@ -22,6 +23,9 @@ class InitialBinding extends Bindings {
       );
 
       Get.lazyPut<AuthController>(() => AuthController(),);
+
+      Get.lazyPut<MapController>(() => MapController(),);
+
 
     } catch (error) {
       DevLogs.logError('Binding initialization error: $error');
