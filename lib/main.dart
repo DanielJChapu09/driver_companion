@@ -1,15 +1,22 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
-import 'features/main/pages/mainscreen.dart';
+import 'package:get/get.dart';
+import 'bindings/binding.dart';
+import 'core/constants/color_constants.dart';
+import 'core/routes/app_pages.dart';
+import 'core/utils/logs.dart';
+import 'features/authentication/handler/auth_handler.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+Future<void> main() async {
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+    await InitialBinding().dependencies();
 
-  // Set your Mapbox Access Token
-  String accessToken = const String.fromEnvironment("ACCESS_TOKEN");
-  MapboxOptions.setAccessToken(accessToken);
-
-  runApp(const MyApp());
+    runApp(const MyApp());
+  } catch (e) {
+    DevLogs.logError('Initialization error: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -17,9 +24,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp(
+      title: 'CUT Nexus',
+      defaultTransition: Transition.cupertino,
+      theme: Palette.lightTheme,
+      darkTheme: Palette.darkTheme,
+      themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
-      home: MainScreen(),
+      getPages: AppPages.routes,
+      home: AuthHandler(),
     );
   }
 }
+

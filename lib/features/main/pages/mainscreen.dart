@@ -1,8 +1,13 @@
-
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:mymaptest/features/main/pages/home_tab.dart';
 import 'package:mymaptest/features/main/pages/map_tab.dart';
 import 'package:mymaptest/features/main/pages/settings_tab.dart';
+import '../../../config/theme/app_colors.dart';
+import '../../../config/theme/app_theme.dart';
+import '../controller/botton_nav_controller.dart';
+import '../controller/theme_controller.dart';
 
 
 class MainScreen extends StatefulWidget {
@@ -13,8 +18,6 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0;
-
   // List of pages
   final List<Widget> _screens = [
     HomeTab(),
@@ -22,39 +25,55 @@ class _MainScreenState extends State<MainScreen> {
     SettingsTab(),
   ];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final ThemeController themeController = Get.find();
+    final BottomNavController navigationController = Get.find();
+
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.purple, // Customize color
-        unselectedItemColor: Colors.grey,
-        onTap: _onItemTapped,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        toolbarHeight: 10,
+        elevation: 0,
         backgroundColor: Colors.white,
+      ),
+      body: Obx(() => _screens[navigationController.currentIndex.value]),
+      bottomNavigationBar: Obx(
+            () => BottomNavigationBar(
+          currentIndex: navigationController.currentIndex.value,
+          onTap: (index) => navigationController.navigateTo(index),
+          selectedItemColor: AppColors.primaryRed,
+          unselectedItemColor: AppColors.grey,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: themeController.isDarkMode.value ? AppTheme.darkBackground : AppTheme.lightBackground,
+          elevation: 2,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          items: [
+            BottomNavigationBarItem(
+              icon: Icon(
+                FontAwesomeIcons.house,
+                color: navigationController.currentIndex.value == 0 ? AppColors.primaryRed : const Color(0xFF596375)
+              ),
+              label: "Home",
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(
+                  FontAwesomeIcons.map,
+                  color: navigationController.currentIndex.value == 0 ? AppColors.primaryRed : const Color(0xFF596375)
+              ),
+              label: "Map",
+            ),
+
+            BottomNavigationBarItem(
+              icon: Icon(
+                  FontAwesomeIcons.gears,
+                  color: navigationController.currentIndex.value == 0 ? AppColors.primaryRed : const Color(0xFF596375)
+              ),
+              label: "Settings",
+            ),
+          ],
+        ),
       ),
     );
   }

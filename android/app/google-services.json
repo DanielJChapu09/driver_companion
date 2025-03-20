@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "108664222387",
+    "project_id": "driver-components",
+    "storage_bucket": "driver-components.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:108664222387:android:3072e0aa2fc74f836236c6",
+        "android_client_info": {
+          "package_name": "com.example.mymaptest"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCz8UzdDHRfF5v-5vO4Ndm00bEeEaQ2v-Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
