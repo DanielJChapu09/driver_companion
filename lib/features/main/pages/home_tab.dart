@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:mymaptest/util/smart_device_box.dart';
-import 'package:mymaptest/util/my_button.dart';
-import 'package:mymaptest/pages/service_locator.dart';
-import 'package:mymaptest/pages/vehicle_details.dart';
-import 'package:mymaptest/pages/driver_ai.dart';
-import 'package:mymaptest/pages/community.dart';
-import 'package:mymaptest/pages/trends.dart';
-import 'package:mymaptest/pages/driver_behavior.dart';
-
+import 'package:mymaptest/core/constants/image_asset_constants.dart';
+import 'package:mymaptest/core/routes/app_pages.dart';
+import 'package:mymaptest/widgets/cards/service_card.dart';
+import '../../../config/theme/app_colors.dart';
+import '../../../widgets/cards/utility_card.dart';
 import '../../authentication/controller/auth_controller.dart';
 
 class HomeTab extends StatefulWidget {
@@ -21,22 +17,6 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> {
 
   final authController = Get.find<AuthController>();
-
-  // list of smart devices
-  List mySmartDevices = [
-    // [ smartDeviceName, iconPath , powerStatus, pageRoute ]
-    ["AI Car Assistant", "lib/icons/a_i.png", true, DriverAIScreen()],
-    ["Driver Behavior", "lib/icons/driver.png", false, DriverBehavior()],
-    ["Driver Community", "lib/icons/community.png", false, CommunityPage()],
-    ["Trends", "lib/icons/trending.png", true, TrendsPage()],
-  ];
-
-  // power button switched
-  void powerSwitchChanged(bool value, int index) {
-    setState(() {
-      mySmartDevices[index][2] = value;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,42 +53,29 @@ class _HomeTabState extends State<HomeTab> {
                 Text(
                   "SMART DRIVER COMPANION",
                   style: TextStyle(
-                      fontSize: 20,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold
                   ),
                 ),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    MyButton(
-                      iconImagePath: "lib/icons/location.png",
-                      buttonText: 'Service Locator',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => ServiceLocator()),
-                        );
-                      },
+
+                    ServiceCard(
+                      icon: ImageAssetPath.location,
+                      title: 'Service Locator',
+                      onPressed: ()=> Get.toNamed(Routes.serviceLocator)
                     ),
-                    MyButton(
-                      iconImagePath: "lib/icons/car.png",
-                      buttonText: 'Vehicle Details',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => VehicleDetails()),
-                        );
-                      },
+                    ServiceCard(
+                      icon: ImageAssetPath.car,
+                      title: 'Vehicle Details',
+                      onPressed: ()=> Get.toNamed(Routes.vehicleDetails)
                     ),
-                    MyButton(
-                      iconImagePath: "lib/icons/route.png",
-                      buttonText: 'Plan A Drive',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => DriverAIScreen()),
-                        );
-                      },
+                    ServiceCard(
+                      icon: ImageAssetPath.route,
+                      title: 'Plan A Drive',
+                      onPressed: ()=> Get.toNamed(Routes.driverAIScreen)
                     ),
                   ],
                 ),
@@ -131,40 +98,57 @@ class _HomeTabState extends State<HomeTab> {
             Text(
               "SERVICES",
               style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 24,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold
               ),
             ),
             const SizedBox(height: 10),
 
-            // grid
+
             Expanded(
-              child: GridView.builder(
-                itemCount: 4,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 25),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 1 / 1.3,
-                ),
-                itemBuilder: (context, index) {
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => mySmartDevices[index][3]),
-                      );
-                    },
-                    child: SmartDeviceBox(
-                      smartDeviceName: mySmartDevices[index][0],
-                      iconPath: mySmartDevices[index][1],
-                      powerOn: mySmartDevices[index][2],
-                      onChanged: (value) => powerSwitchChanged(value, index),
-                    ),
-                  );
-                },
+              child: GridView.count(
+                physics: NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                crossAxisCount: 2,
+                crossAxisSpacing: 10.0,
+                mainAxisSpacing: 10.0,
+                childAspectRatio: 1.3,
+                children: [
+
+                  UtilityCard(
+                    onTap: ()=>Get.toNamed(Routes.driverAIScreen),
+                    color: Colors.purple,
+                    utilityName: "AI Car Assistant",
+                    utilityIcon: ImageAssetPath.ai,
+                  ),
+
+
+                  UtilityCard(
+                    onTap: ()=>Get.toNamed(Routes.driverBehavior),
+                    color: AppColors.primaryRed,
+                    utilityName: "Driver Behaviour",
+                    utilityIcon: ImageAssetPath.driver,
+                  ),
+
+
+                  UtilityCard(
+                    onTap: ()=>Get.toNamed(Routes.community),
+                    color: AppColors.blue,
+                    utilityName: "Community",
+                    utilityIcon: ImageAssetPath.community,
+                  ),
+
+
+                  UtilityCard(
+                    onTap: ()=>Get.toNamed(Routes.trends),
+                    color: Colors.green,
+                    utilityName: "Trends",
+                    utilityIcon: ImageAssetPath.trending
+                  ),
+                ],
               ),
-            )
+            ),
+
           ],
         ),
       ),

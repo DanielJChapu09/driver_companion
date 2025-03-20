@@ -13,5 +13,13 @@ abstract class Routes {
   static const navigationScreen = "/navigation";
   static const campusMapScreen = "/campusMap";
   static const arExamplesScreen = "/arExamples";
+
+
+  static const serviceLocator = "/serviceLocator";
+  static const vehicleDetails = "/vehicleDetails";
+  static const driverAIScreen = "/driverAI";
+  static const community = "/community";
+  static const trends = "/trends";
+  static const driverBehavior = "/driverBehavior";
 }
 

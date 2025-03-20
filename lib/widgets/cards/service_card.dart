@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-class MyButton extends StatelessWidget {
-  final String iconImagePath;
-  final String buttonText;
-  final VoidCallback? onPressed;  // Add this line
+class ServiceCard extends StatelessWidget {
+  final String icon;
+  final String title;
+  final VoidCallback? onPressed;
 
-  const MyButton({
+  const ServiceCard({
     super.key,
-    required this.iconImagePath,
-    required this.buttonText,
+    required this.icon,
+    required this.title,
     this.onPressed,  // Add this line
   });
 
@@ -20,22 +20,21 @@ class MyButton extends StatelessWidget {
         children: [
           Container(
             height: 60,
-            // Remove or reduce padding
             padding: EdgeInsets.zero,
             decoration: BoxDecoration(
-              color: Colors.white,
+
             ),
-            // Clip the image to the container's rounded corners
             child: ClipRRect(
               child: Image.asset(
-                iconImagePath,
-                fit: BoxFit.cover, // Adjust to BoxFit.cover or BoxFit.contain as needed
+                icon,
+                color: Theme.of(context).textTheme.bodyLarge!.color,
+                fit: BoxFit.cover,
               ),
             ),
           ),
           const SizedBox(height: 10,),
           Text(
-            buttonText,
+            title,
             style: const TextStyle(fontSize: 10,),
           )
         ],
