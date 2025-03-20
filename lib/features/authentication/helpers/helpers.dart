@@ -160,7 +160,7 @@ class AuthHelpers {
 
   static void signOut() async {
     Get.showOverlay(
-      asyncFunction: () => _authController.signOut(),
+      asyncFunction: () => _authController.signOut().then((value) => Get.offAllNamed(Routes.initialScreen)),
       loadingWidget: const CustomLoader(
         message: 'Signing out',
       ),

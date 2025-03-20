@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mp;
 import 'package:geolocator/geolocator.dart' as gl;
 import 'package:dio/dio.dart';
+
+import '../../maps/controller/campus_map_controller.dart';
 
 class Location {
   final double lat;
@@ -34,8 +38,8 @@ class _MapTabState extends State<MapTab> {
   bool _isExpanded = false;
   List<MapBoxPlace> searchResults = [];
   final TextEditingController searchController = TextEditingController();
+  final controller = Get.find<MapController>();
 
-  final String accessToken = 'pk.eyJ1IjoiZGNoYXB1IiwiYSI6ImNtN2Z4bDlvYzBzeXQyanI1em16MG51dTIifQ.-p9NoXH3usE7ZbTdp4PucQ';
 
   @override
   void initState() {
@@ -122,8 +126,7 @@ class _MapTabState extends State<MapTab> {
     }
 
     try {
-      String url =
-          'https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?country=zw&limit=5&types=place,address,poi&access_token=$accessToken';
+      String url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?country=zw&limit=5&types=place,address,poi&access_token=${APIKeys.MAPBOXPUBLICTOKEN}';
 
       final response = await Dio().get(url);
       final data = response.data;
@@ -185,7 +188,17 @@ class _MapTabState extends State<MapTab> {
               curve: Curves.easeInOut,
               height: firstContainerHeight,
               child: mp.MapWidget(
-                onMapCreated: _onMapCreated,
+                cameraOptions: mp.CameraOptions(
+                  center: mp.Point(
+                    coordinates: mp.Position(
+                      18.3333,
+                      -30.0333,
+                    ),
+                  ),
+                  zoom: 14.0,
+                ),
+                onMapCreated: controller.initializeMap,
+                styleUri: mp.MapboxStyles.MAPBOX_STREETS,
               ),
             ),
             Expanded(
@@ -244,7 +257,6 @@ class _MapTabState extends State<MapTab> {
                 ),
               ),
             )
-
           ],
         ),
       ),

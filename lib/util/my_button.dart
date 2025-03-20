@@ -14,8 +14,8 @@ class MyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(  // Wrap the Column with GestureDetector
-      onTap: onPressed,  // Add this line
+    return GestureDetector(
+      onTap: onPressed,
       child: Column(
         children: [
           Container(
@@ -36,7 +36,7 @@ class MyButton extends StatelessWidget {
           const SizedBox(height: 10,),
           Text(
             buttonText,
-            style: const TextStyle(fontSize: 10, color: Colors.black,),
+            style: const TextStyle(fontSize: 10,),
           )
         ],
       ),

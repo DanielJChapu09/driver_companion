@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:mymaptest/util/smart_device_box.dart';
 import 'package:mymaptest/util/my_button.dart';
 import 'package:mymaptest/pages/service_locator.dart';
@@ -8,6 +9,8 @@ import 'package:mymaptest/pages/community.dart';
 import 'package:mymaptest/pages/trends.dart';
 import 'package:mymaptest/pages/driver_behavior.dart';
 
+import '../../authentication/controller/auth_controller.dart';
+
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
 
@@ -16,9 +19,8 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  // padding constants
-  final double horizontalPadding = 40;
-  final double verticalPadding = 25;
+
+  final authController = Get.find<AuthController>();
 
   // list of smart devices
   List mySmartDevices = [
@@ -36,104 +38,81 @@ class _HomeTabState extends State<HomeTab> {
     });
   }
 
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  // Color scheme
-  final Color lightIndigo = Color(0xFFE8EAF6);
-  final Color lightPurple = Color(0xFFE1BEE7);
-  final Color grey = Colors.grey;
-  final Color darkGrey = Colors.grey[800]!;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: lightIndigo,
-      body: SafeArea(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Good Afternoon',
+              style: TextStyle(
+                fontSize: 12
+              ),
+            ),
+            Text(
+              authController.currentUser.value!.displayName!,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // app bar
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: horizontalPadding,
-                vertical: verticalPadding,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // menu icon
-                  Image.asset(
-                    'lib/icons/menu.png',
-                    height: 45,
-                    color: Colors.black,
-                  ),
-
-                  // account icon
-                  Icon(
-                    Icons.person,
-                    size: 45,
-                    color: darkGrey,
-                  )
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
             // welcome home
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "SMART DRIVER COMPANION",
-                    style: TextStyle(fontSize: 20, color: Colors.black),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "SMART DRIVER COMPANION",
+                  style: TextStyle(
+                      fontSize: 20,
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      MyButton(
-                        iconImagePath: "lib/icons/location.png",
-                        buttonText: 'Service Locator',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => ServiceLocator()),
-                          );
-                        },
-                      ),
-                      MyButton(
-                        iconImagePath: "lib/icons/car.png",
-                        buttonText: 'Vehicle Details',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => VehicleDetails()),
-                          );
-                        },
-                      ),
-                      MyButton(
-                        iconImagePath: "lib/icons/route.png",
-                        buttonText: 'Plan A Drive',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => DriverAIScreen()),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    MyButton(
+                      iconImagePath: "lib/icons/location.png",
+                      buttonText: 'Service Locator',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => ServiceLocator()),
+                        );
+                      },
+                    ),
+                    MyButton(
+                      iconImagePath: "lib/icons/car.png",
+                      buttonText: 'Vehicle Details',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => VehicleDetails()),
+                        );
+                      },
+                    ),
+                    MyButton(
+                      iconImagePath: "lib/icons/route.png",
+                      buttonText: 'Plan A Drive',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => DriverAIScreen()),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ),
 
             const SizedBox(height: 25),
@@ -149,15 +128,11 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 25),
 
             // smart devices grid
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Text(
-                "SERVICES",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 24,
-                  color: Colors.black,
-                ),
+            Text(
+              "SERVICES",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
               ),
             ),
             const SizedBox(height: 10),

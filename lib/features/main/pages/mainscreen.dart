@@ -35,7 +35,6 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         toolbarHeight: 10,
         elevation: 0,
-        backgroundColor: Colors.white,
       ),
       body: Obx(() => _screens[navigationController.currentIndex.value]),
       bottomNavigationBar: Obx(
@@ -60,7 +59,7 @@ class _MainScreenState extends State<MainScreen> {
             BottomNavigationBarItem(
               icon: Icon(
                   FontAwesomeIcons.map,
-                  color: navigationController.currentIndex.value == 0 ? AppColors.primaryRed : const Color(0xFF596375)
+                  color: navigationController.currentIndex.value == 1 ? AppColors.primaryRed : const Color(0xFF596375)
               ),
               label: "Map",
             ),
@@ -68,7 +67,7 @@ class _MainScreenState extends State<MainScreen> {
             BottomNavigationBarItem(
               icon: Icon(
                   FontAwesomeIcons.gears,
-                  color: navigationController.currentIndex.value == 0 ? AppColors.primaryRed : const Color(0xFF596375)
+                  color: navigationController.currentIndex.value == 2 ? AppColors.primaryRed : const Color(0xFF596375)
               ),
               label: "Settings",
             ),
