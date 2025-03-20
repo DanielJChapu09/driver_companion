@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "com.example.mymaptest"
-    compileSdk = 34
+    compileSdk = 35
     ndkVersion = "27.0.12077973"
 
 
@@ -28,7 +28,7 @@ android {
         applicationId = "com.example.mymaptest"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
