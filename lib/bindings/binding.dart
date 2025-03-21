@@ -1,5 +1,6 @@
 
 import 'package:get/get.dart';
+import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/features/community/controller/community_controller.dart';
 import 'package:mymaptest/features/main/controller/theme_controller.dart';
 
@@ -7,6 +8,7 @@ import '../core/utils/logs.dart';
 import '../features/authentication/controller/auth_controller.dart';
 import '../features/main/controller/botton_nav_controller.dart';
 import '../features/maps/controller/campus_map_controller.dart';
+import '../features/navigation/controller/navigation_controller.dart';
 import '../widgets/snackbar/custom_snackbar.dart';
 
 class InitialBinding extends Bindings {
@@ -26,6 +28,7 @@ class InitialBinding extends Bindings {
       Get.lazyPut<AuthController>(() => AuthController(),);
 
       Get.lazyPut<CommunityController>(() => CommunityController(),);
+      Get.lazyPut<NavigationController>(() => NavigationController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),);
 
       //Get.lazyPut<MapController>(() => MapController(),);
 

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:mymaptest/features/community/view/community_screen.dart';
+import 'package:mymaptest/features/navigation/view/saved_places_screen.dart';
 import 'package:mymaptest/pages/vehicle_details.dart';
 import '../../features/authentication/handler/auth_handler.dart';
 import '../../features/authentication/views/email_verification.dart';
@@ -12,6 +13,8 @@ import '../../features/authentication/views/sign_up_screen.dart';
 import '../../features/community/view/community_map_screen.dart';
 import '../../features/community/view/create_notification_screen.dart';
 import '../../features/main/pages/mainscreen.dart';
+import '../../features/navigation/view/navigation_screen.dart';
+import '../../features/navigation/view/search_screen.dart';
 import '../../pages/community.dart';
 import '../../pages/driver_ai.dart';
 import '../../pages/driver_behavior.dart';
@@ -115,7 +118,21 @@ class AppPages {
         page: ()=> VehicleDetails(),
     ),
 
+    GetPage(
+        name: Routes.searchScreen,
+        page: ()=> SearchScreen()
+    ),
 
+    GetPage(
+        name: Routes.savedPlacesScreen,
+        page: ()=> SavedPlacesScreen()
+    ),
+
+
+    GetPage(
+        name: Routes.navigationScreen,
+        page: ()=> NavigationScreen()
+    ),
 
   ];
 }
