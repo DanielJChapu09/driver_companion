@@ -21,5 +21,7 @@ abstract class Routes {
   static const community = "/community";
   static const trends = "/trends";
   static const driverBehavior = "/driverBehavior";
+  static const communityMapScreen = "/communityMap";
+  static const createNotificationScreen = "/createNotification";
 }
 

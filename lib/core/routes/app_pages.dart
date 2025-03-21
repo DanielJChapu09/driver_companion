@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
+import 'package:mymaptest/features/community/view/community_screen.dart';
 import 'package:mymaptest/pages/vehicle_details.dart';
 import '../../features/authentication/handler/auth_handler.dart';
 import '../../features/authentication/views/email_verification.dart';
@@ -8,6 +9,8 @@ import '../../features/authentication/views/login_screen.dart';
 import '../../features/authentication/views/otp_screen.dart';
 import '../../features/authentication/views/resend_reset_email_screen.dart';
 import '../../features/authentication/views/sign_up_screen.dart';
+import '../../features/community/view/community_map_screen.dart';
+import '../../features/community/view/create_notification_screen.dart';
 import '../../features/main/pages/mainscreen.dart';
 import '../../pages/community.dart';
 import '../../pages/driver_ai.dart';
@@ -82,7 +85,7 @@ class AppPages {
 
     GetPage(
         name: Routes.community,
-        page: ()=> CommunityPage(),
+        page: ()=> CommunityScreen(),
     ),
 
     GetPage(
@@ -95,6 +98,16 @@ class AppPages {
         page: ()=> DriverBehavior(),
     ),
 
+
+    GetPage(
+        name: Routes.createNotificationScreen,
+        page: () => CreateNotificationScreen()
+    ),
+
+    GetPage(
+        name: Routes.communityMapScreen,
+        page: () => CommunityMapScreen()
+    ),
 
 
     GetPage(

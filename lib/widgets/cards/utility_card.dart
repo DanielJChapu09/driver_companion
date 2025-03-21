@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 
-class UtilityCard extends StatelessWidget {
+class SmartDeviceCard extends StatelessWidget {
   final String utilityName;
   final String utilityIcon;
   final Color color;
   final VoidCallback? onTap;
-  const UtilityCard({super.key, required this.utilityName, required this.utilityIcon, required this.color, this.onTap});
+  const SmartDeviceCard({super.key, required this.utilityName, required this.utilityIcon, required this.color, this.onTap});
 
   @override
   Widget build(BuildContext context) {

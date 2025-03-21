@@ -115,7 +115,7 @@ class _HomeTabState extends State<HomeTab> {
                 childAspectRatio: 1.3,
                 children: [
 
-                  UtilityCard(
+                  SmartDeviceCard(
                     onTap: ()=>Get.toNamed(Routes.driverAIScreen),
                     color: Colors.purple,
                     utilityName: "AI Car Assistant",
@@ -123,7 +123,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
 
 
-                  UtilityCard(
+                  SmartDeviceCard(
                     onTap: ()=>Get.toNamed(Routes.driverBehavior),
                     color: AppColors.primaryRed,
                     utilityName: "Driver Behaviour",
@@ -131,7 +131,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
 
 
-                  UtilityCard(
+                  SmartDeviceCard(
                     onTap: ()=>Get.toNamed(Routes.community),
                     color: AppColors.blue,
                     utilityName: "Community",
@@ -139,7 +139,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
 
 
-                  UtilityCard(
+                  SmartDeviceCard(
                     onTap: ()=>Get.toNamed(Routes.trends),
                     color: Colors.green,
                     utilityName: "Trends",

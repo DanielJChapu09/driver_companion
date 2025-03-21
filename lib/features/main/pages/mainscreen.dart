@@ -21,7 +21,7 @@ class _MainScreenState extends State<MainScreen> {
   // List of pages
   final List<Widget> _screens = [
     HomeTab(),
-    MapTab(),
+    MapsTab(),
     SettingsTab(),
   ];
 

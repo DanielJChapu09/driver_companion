@@ -34,8 +34,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  mapbox_maps_flutter: ^2.0.0
-  geolocator: ^13.0.2
+  mapbox_gl:
+    git:
+      url: https://github.com/KumaloWilson/maps.git
+  geolocator: ^13.0.3
   permission_handler: ^11.4.0
   geocoding: ^3.0.0
   mapbox_search: any
@@ -54,6 +56,12 @@ dependencies:
   pinput: ^5.0.1
   cloud_firestore: ^5.6.5
   flutter_svg: ^2.0.17
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  firebase_messaging: ^15.2.4
+  flutter_local_notifications: ^19.0.0
+  firebase_storage: ^12.4.4
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,6 @@
 
 import 'package:get/get.dart';
+import 'package:mymaptest/features/community/controller/community_controller.dart';
 import 'package:mymaptest/features/main/controller/theme_controller.dart';
 
 import '../core/utils/logs.dart';
@@ -24,7 +25,9 @@ class InitialBinding extends Bindings {
 
       Get.lazyPut<AuthController>(() => AuthController(),);
 
-      Get.lazyPut<MapController>(() => MapController(),);
+      Get.lazyPut<CommunityController>(() => CommunityController(),);
+
+      //Get.lazyPut<MapController>(() => MapController(),);
 
 
     } catch (error) {
