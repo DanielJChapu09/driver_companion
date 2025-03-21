@@ -32,6 +32,7 @@ class MyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
       getPages: AppPages.routes,
+      initialRoute: Routes.initialScreen,
       home: AuthHandler(),
     );
   }

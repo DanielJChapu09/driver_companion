@@ -3,8 +3,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
-import 'package:location/location.dart';
+import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
@@ -18,7 +19,6 @@ class MapsTab extends StatefulWidget {
 
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
-  final Location location = Location();
   bool _initialPositionEstablished = false;
 
   @override
@@ -29,8 +29,10 @@ class _MapsTabState extends State<MapsTab> {
 
   Future<void> _getCurrentLocation() async {
     try {
-      LocationData locationData = await location.getLocation();
-      controller.currentLocation.value = locationData;
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      controller.currentLocation.value = position;
     } catch (e) {
       print('Error getting current location: $e');
     }
@@ -48,11 +50,11 @@ class _MapsTabState extends State<MapsTab> {
             }
 
             return MapboxMap(
-              accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN', // Replace with your Mapbox token
+              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
-                  controller.currentLocation.value!.latitude!,
-                  controller.currentLocation.value!.longitude!,
+                  controller.currentLocation.value!.latitude,
+                  controller.currentLocation.value!.longitude,
                 ),
                 zoom: 14.0,
               ),
@@ -75,8 +77,8 @@ class _MapsTabState extends State<MapsTab> {
                   mapController.animateCamera(
                     CameraUpdate.newLatLngZoom(
                       LatLng(
-                        controller.currentLocation.value!.latitude!,
-                        controller.currentLocation.value!.longitude!,
+                        controller.currentLocation.value!.latitude,
+                        controller.currentLocation.value!.longitude,
                       ),
                       15.0,
                     ),
@@ -147,8 +149,8 @@ class _MapsTabState extends State<MapsTab> {
                       controller.mapController.value!.animateCamera(
                         CameraUpdate.newLatLngZoom(
                           LatLng(
-                            controller.currentLocation.value!.latitude!,
-                            controller.currentLocation.value!.longitude!,
+                            controller.currentLocation.value!.latitude,
+                            controller.currentLocation.value!.longitude,
                           ),
                           16.0,
                         ),
@@ -256,4 +258,3 @@ class _MapsTabState extends State<MapsTab> {
     return byteData!.buffer.asUint8List();
   }
 }
-

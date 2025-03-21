@@ -7,7 +7,6 @@ import 'package:mymaptest/features/main/controller/theme_controller.dart';
 import '../core/utils/logs.dart';
 import '../features/authentication/controller/auth_controller.dart';
 import '../features/main/controller/botton_nav_controller.dart';
-import '../features/maps/controller/campus_map_controller.dart';
 import '../features/navigation/controller/navigation_controller.dart';
 import '../widgets/snackbar/custom_snackbar.dart';
 

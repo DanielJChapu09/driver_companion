@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:location/location.dart';
+import 'package:geolocator/geolocator.dart';
 import '../model/route_model.dart';
 
 class NavigationService {
-  final Location _location = Location();
-  StreamSubscription<LocationData>? _locationSubscription;
-  final StreamController<LocationData> _locationController = StreamController<LocationData>.broadcast();
+  StreamSubscription<Position>? _locationSubscription;
+  final StreamController<Position> _locationController = StreamController<Position>.broadcast();
   final StreamController<int> _stepController = StreamController<int>.broadcast();
   final StreamController<String> _instructionController = StreamController<String>.broadcast();
   final StreamController<double> _distanceController = StreamController<double>.broadcast();
@@ -19,7 +18,7 @@ class NavigationService {
   Timer? _simulationTimer;
 
   // Streams
-  Stream<LocationData> get locationStream => _locationController.stream;
+  Stream<Position> get locationStream => _locationController.stream;
   Stream<int> get stepStream => _stepController.stream;
   Stream<String> get instructionStream => _instructionController.stream;
   Stream<double> get distanceStream => _distanceController.stream;
@@ -34,27 +33,27 @@ class NavigationService {
   // Initialize location service
   Future<bool> initialize() async {
     try {
-      bool serviceEnabled = await _location.serviceEnabled();
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        serviceEnabled = await _location.requestService();
+        serviceEnabled = await Geolocator.openLocationSettings();
         if (!serviceEnabled) {
           return false;
         }
       }
 
-      PermissionStatus permissionStatus = await _location.hasPermission();
-      if (permissionStatus == PermissionStatus.denied) {
-        permissionStatus = await _location.requestPermission();
-        if (permissionStatus != PermissionStatus.granted) {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
           return false;
         }
       }
 
       // Configure location settings
-      await _location.changeSettings(
+      const LocationSettings locationSettings = LocationSettings(
         accuracy: LocationAccuracy.high,
-        interval: 1000, // 1 second
         distanceFilter: 5, // 5 meters
+        timeLimit: Duration(seconds: 1), // 1 second
       );
 
       return true;
@@ -76,7 +75,11 @@ class NavigationService {
       _isNavigating = true;
 
       // Start location updates
-      _locationSubscription = _location.onLocationChanged.listen(_onLocationUpdate);
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      );
+      _locationSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(_onLocationUpdate);
 
       // Initial instruction
       if (route.steps.isNotEmpty) {
@@ -104,10 +107,10 @@ class NavigationService {
   }
 
   // Handle location updates
-  void _onLocationUpdate(LocationData locationData) {
+  void _onLocationUpdate(Position position) {
     if (!_isNavigating || _currentRoute == null) return;
 
-    _locationController.add(locationData);
+    _locationController.add(position);
 
     // Calculate distance to current step end
     if (_currentRoute!.steps.isNotEmpty && _currentStepIndex < _currentRoute!.steps.length) {
@@ -115,8 +118,8 @@ class NavigationService {
 
       // Calculate distance to end of current step
       double distanceToStepEnd = _calculateDistance(
-        locationData.latitude!,
-        locationData.longitude!,
+        position.latitude,
+        position.longitude,
         currentStep.endLatitude,
         currentStep.endLongitude,
       );
@@ -197,19 +200,22 @@ class NavigationService {
       double lat = step.startLatitude + (step.endLatitude - step.startLatitude) * progress;
       double lng = step.startLongitude + (step.endLongitude - step.startLongitude) * progress;
 
-      // Create simulated location data
-      LocationData locationData = LocationData.fromMap({
-        'latitude': lat,
-        'longitude': lng,
-        'accuracy': 10.0,
-        'altitude': 0.0,
-        'speed': 15.0,
-        'heading': 0.0,
-        'time': DateTime.now().millisecondsSinceEpoch,
-      });
+      // Create simulated position
+      Position position = Position(
+        latitude: lat,
+        longitude: lng,
+        timestamp: DateTime.now(),
+        accuracy: 10.0,
+        altitude: 0.0,
+        heading: 0.0,
+        speed: 15.0,
+        speedAccuracy: 1.0,
+        altitudeAccuracy: 1.0,
+        headingAccuracy: 1.0,
+      );
 
       // Emit location update
-      _locationController.add(locationData);
+      _locationController.add(position);
 
       // Update progress
       progress += 0.05 * speedFactor;
@@ -247,4 +253,3 @@ class NavigationService {
     _simulationTimer?.cancel();
   }
 }
-

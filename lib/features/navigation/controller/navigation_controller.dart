@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:get/get.dart';
-import 'package:location/location.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 
 import '../model/place_model.dart';
@@ -17,7 +17,7 @@ class NavigationController extends GetxController {
   final NavigationService _navigationService = NavigationService();
 
   // Observable variables
-  final Rx<LocationData?> currentLocation = Rx<LocationData?>(null);
+  final Rx<Position?> currentLocation = Rx<Position?>(null);
   final RxList<SearchResult> searchResults = <SearchResult>[].obs;
   final RxList<Place> favoritePlaces = <Place>[].obs;
   final RxList<Place> recentPlaces = <Place>[].obs;
@@ -136,8 +136,8 @@ class NavigationController extends GetxController {
       LatLng? proximity;
       if (currentLocation.value != null) {
         proximity = LatLng(
-          currentLocation.value!.latitude!,
-          currentLocation.value!.longitude!,
+          currentLocation.value!.latitude,
+          currentLocation.value!.longitude,
         );
       }
 
@@ -496,4 +496,3 @@ class NavigationController extends GetxController {
     isNavigating.value = true;
   }
 }
-

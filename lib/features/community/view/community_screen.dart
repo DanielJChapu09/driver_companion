@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
@@ -10,9 +12,7 @@ import 'package:mapbox_gl/mapbox_gl.dart';
 import 'notification_details_screen.dart';
 
 class CommunityScreen extends StatelessWidget {
-
   CommunityScreen({super.key});
-
 
   final CommunityController controller = Get.find<CommunityController>();
 
@@ -25,7 +25,7 @@ class CommunityScreen extends StatelessWidget {
             : 'Drivers in ${controller.currentCity.value}')),
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh),
             onPressed: () {
               controller.updateCurrentLocation();
               controller.fetchNearbyNotifications();
@@ -35,7 +35,7 @@ class CommunityScreen extends StatelessWidget {
       ),
       body: Obx(() {
         if (controller.isLoading.value) {
-          return Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (controller.errorMessage.value.isNotEmpty) {
@@ -45,13 +45,13 @@ class CommunityScreen extends StatelessWidget {
               children: [
                 Text(
                   'Error: ${controller.errorMessage.value}',
-                  style: TextStyle(color: Colors.red),
+                  style: const TextStyle(color: Colors.red),
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => controller.initializeServices(),
-                  child: Text('Retry'),
+                  child: const Text('Retry'),
                 ),
               ],
             ),
@@ -61,7 +61,7 @@ class CommunityScreen extends StatelessWidget {
         return Column(
           children: [
             // Map view showing nearby notifications
-            Container(
+            SizedBox(
               height: 200,
               child: _buildMapView(),
             ),
@@ -73,7 +73,7 @@ class CommunityScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     TabBar(
-                      tabs: [
+                      tabs: const [
                         Tab(text: 'City Feed'),
                         Tab(text: 'Nearby'),
                       ],
@@ -101,7 +101,7 @@ class CommunityScreen extends StatelessWidget {
         onPressed: () {
           Get.to(() => CreateNotificationScreen());
         },
-        child: Icon(Icons.add),
+        child: const Icon(Icons.add),
       ),
     );
   }
@@ -109,7 +109,7 @@ class CommunityScreen extends StatelessWidget {
   // Build the map view with notification markers
   Widget _buildMapView() {
     if (controller.currentLocation.value == null) {
-      return Center(child: Text('Location not available'));
+      return const Center(child: Text('Location not available'));
     }
 
     return Obx(() {
@@ -123,40 +123,109 @@ class CommunityScreen extends StatelessWidget {
           zoom: 13.0,
         ),
         onMapCreated: (MapboxMapController mapController) {
-          // Add markers for each notification
-          _addNotificationMarkers(mapController);
+          // Load map images and then add markers
+          _loadMapImages(mapController).then((_) {
+            // Add markers for each notification
+            _addNotificationMarkers(mapController);
+          }).catchError((error) {
+            print('Error loading map resources: $error');
+          });
         },
         onStyleLoadedCallback: () {
           // Map style loaded
+          print('Map style loaded successfully');
         },
       );
     });
   }
 
-  // Add markers for notifications
-  void _addNotificationMarkers(MapboxMapController controller) {
-    // Add marker for current location
-    controller.addSymbol(SymbolOptions(
-      geometry: LatLng(
-        this.controller.currentLocation.value!.latitude,
-        this.controller.currentLocation.value!.longitude,
-      ),
-      iconImage: 'car',
-      iconSize: 1.5,
-    ));
+  // Load map images before adding symbols
+  Future<void> _loadMapImages(MapboxMapController controller) async {
+    // Make sure to add these assets to your pubspec.yaml
+    final images = {
+      'car': 'assets/images/car.png',
+      'accident': 'assets/images/accident.png',
+      'traffic': 'assets/images/traffic.png',
+      'police': 'assets/images/police.png',
+      'hazard': 'assets/images/hazard.png',
+      'marker': 'assets/images/marker.png',
+    };
 
-    // Add markers for each notification
-    for (var notification in this.controller.nearbyNotifications) {
-      controller.addSymbol(SymbolOptions(
+    for (final entry in images.entries) {
+      try {
+        final ByteData bytes = await rootBundle.load(entry.value);
+        final Uint8List list = bytes.buffer.asUint8List();
+        await controller.addImage(entry.key, list);
+        print('Successfully loaded image: ${entry.key}');
+      } catch (e) {
+        print('Failed to load image asset: ${entry.value}: $e');
+        // Add a fallback blank image as a placeholder
+        final placeholderImage = await _createPlaceholderImage(40, 40);
+        await controller.addImage(entry.key, placeholderImage);
+      }
+    }
+  }
+
+  // Create a placeholder image when actual assets are missing
+  Future<Uint8List> _createPlaceholderImage(int width, int height) async {
+    final size = width * height * 4; // RGBA
+    final placeholder = Uint8List(size);
+
+    // Fill with a simple colored square (red)
+    for (var i = 0; i < size; i += 4) {
+      placeholder[i] = 255; // R
+      placeholder[i + 1] = 0; // G
+      placeholder[i + 2] = 0; // B
+      placeholder[i + 3] = 255; // A
+    }
+
+    return placeholder;
+  }
+
+  // Add markers for notifications
+  void _addNotificationMarkers(MapboxMapController mapController) {
+    if (this.controller.currentLocation.value == null) {
+      print('Current location is null, cannot add markers');
+      return;
+    }
+
+    try {
+      // Add marker for current location
+      mapController.addSymbol(SymbolOptions(
         geometry: LatLng(
-          notification.latitude,
-          notification.longitude,
+          this.controller.currentLocation.value!.latitude,
+          this.controller.currentLocation.value!.longitude,
         ),
-        iconImage: _getMarkerIconForType(notification.type),
-        iconSize: 1.0,
-        textField: notification.type,
-        textOffset: Offset(0, 1.5),
-      ));
+        iconImage: 'car',
+        iconSize: 1.5,
+      )).then((symbol) {
+        print('Added current location symbol successfully');
+      }).catchError((error) {
+        print('Error adding current location symbol: $error');
+      });
+
+      // Add markers for each notification
+      for (var notification in this.controller.nearbyNotifications) {
+        final iconImage = _getMarkerIconForType(notification.type);
+        mapController.addSymbol(SymbolOptions(
+          geometry: LatLng(
+            notification.latitude,
+            notification.longitude,
+          ),
+          iconImage: iconImage,
+          iconSize: 1.0,
+          textField: notification.type,
+          textOffset: const Offset(0, 1.5),
+          textColor: '#000000',
+          textSize: 12.0,
+        )).then((symbol) {
+          print('Added notification symbol successfully');
+        }).catchError((error) {
+          print('Error adding notification symbol: $error');
+        });
+      }
+    } catch (e) {
+      print('Error in _addNotificationMarkers: $e');
     }
   }
 
@@ -182,7 +251,7 @@ class CommunityScreen extends StatelessWidget {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+          children: const [
             Icon(Icons.notifications_off, size: 48, color: Colors.grey),
             SizedBox(height: 16),
             Text(
@@ -217,20 +286,20 @@ class CommunityScreen extends StatelessWidget {
   // Build a card for a single notification
   Widget _buildNotificationCard(BuildContext context, RoadNotification notification) {
     return Card(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
         onTap: () {
           Get.to(() => NotificationDetailScreen(notification: notification));
         },
         child: Padding(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   _buildTypeIcon(notification.type),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
                     notification.type.toUpperCase(),
                     style: TextStyle(
@@ -238,31 +307,31 @@ class CommunityScreen extends StatelessWidget {
                       color: _getColorForType(notification.type),
                     ),
                   ),
-                  Spacer(),
+                  const Spacer(),
                   Text(
                     _formatTimeAgo(notification.timestamp),
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.grey,
                       fontSize: 12,
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 notification.message,
-                style: TextStyle(fontSize: 16),
+                style: const TextStyle(fontSize: 16),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               if (notification.images.isNotEmpty)
-                Container(
+                SizedBox(
                   height: 120,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: notification.images.length,
                     itemBuilder: (context, index) {
                       return Padding(
-                        padding: EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.only(right: 8),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: Image.network(
@@ -270,31 +339,41 @@ class CommunityScreen extends StatelessWidget {
                             height: 120,
                             width: 160,
                             fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                height: 120,
+                                width: 160,
+                                color: Colors.grey[300],
+                                child: const Center(
+                                  child: Icon(Icons.error),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       );
                     },
                   ),
                 ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Text(
                     'Posted by ${notification.userName}',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
                     ),
                   ),
-                  Spacer(),
+                  const Spacer(),
                   InkWell(
                     onTap: () {
                       controller.likeNotification(notification.id);
                     },
                     child: Row(
                       children: [
-                        Icon(Icons.thumb_up, size: 16),
-                        SizedBox(width: 4),
+                        const Icon(Icons.thumb_up, size: 16),
+                        const SizedBox(width: 4),
                         Text('${notification.likeCount}'),
                       ],
                     ),
@@ -365,4 +444,3 @@ class CommunityScreen extends StatelessWidget {
     }
   }
 }
-
