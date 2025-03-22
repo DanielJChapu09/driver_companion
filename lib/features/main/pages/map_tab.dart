@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data' show Uint8List;
 import 'dart:ui';
 
@@ -10,6 +11,8 @@ import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
 
+import '../../navigation/model/search_result_model.dart';
+
 class MapsTab extends StatefulWidget {
   const MapsTab({super.key});
 
@@ -20,6 +23,8 @@ class MapsTab extends StatefulWidget {
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
   bool _initialPositionEstablished = false;
+  bool _isLoadingDestination = false;
+  SearchResult? _selectedDestination;
 
   @override
   void initState() {
@@ -58,7 +63,7 @@ class _MapsTabState extends State<MapsTab> {
                 ),
                 zoom: 14.0,
               ),
-              onMapCreated: (MapboxMapController mapController) async{
+              onMapCreated: (MapboxMapController mapController) async {
                 controller.setMapController(mapController);
 
                 // Add custom markers
@@ -86,6 +91,7 @@ class _MapsTabState extends State<MapsTab> {
                   _initialPositionEstablished = true;
                 }
               },
+              onMapClick: _handleMapTap,
               myLocationEnabled: true,
               myLocationTrackingMode: MyLocationTrackingMode.Tracking,
               compassEnabled: true,
@@ -95,13 +101,22 @@ class _MapsTabState extends State<MapsTab> {
             );
           }),
 
+          // Loading indicator for destination selection
+          if (_isLoadingDestination)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+
           // Search bar
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 16,
             right: 16,
             child: GestureDetector(
-              onTap: ()=> Get.toNamed(Routes.searchScreen),
+              onTap: () => Get.toNamed(Routes.searchScreen),
               child: Container(
                 height: 50,
                 padding: EdgeInsets.symmetric(horizontal: 16),
@@ -171,6 +186,15 @@ class _MapsTabState extends State<MapsTab> {
             ),
           ),
 
+          // Route preview card (only shown when destination is selected)
+          if (_selectedDestination != null)
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 80,
+              child: _buildRoutePreviewCard(),
+            ),
+
           // Navigation button (only shown when route is available)
           Obx(() {
             if (controller.currentRoute.value != null && !controller.isNavigating.value) {
@@ -229,6 +253,325 @@ class _MapsTabState extends State<MapsTab> {
     );
   }
 
+  // Handle map tap to select destination
+  void _handleMapTap(Point<double> point, LatLng coordinates) async {
+    // Don't process taps if already loading or navigating
+    if (_isLoadingDestination || controller.isNavigating.value) return;
+
+    setState(() {
+      _isLoadingDestination = true;
+      _selectedDestination = null;
+    });
+
+    try {
+      // Clear previous routes and markers
+      if (controller.mapController.value != null) {
+        controller.mapController.value!.clearSymbols();
+        controller.mapController.value!.clearLines();
+      }
+
+      // Add destination marker
+      if (controller.mapController.value != null) {
+        controller.mapController.value!.addSymbol(
+          SymbolOptions(
+            geometry: coordinates,
+            iconImage: "marker-end",
+            iconSize: 1.5,
+          ),
+        );
+      }
+
+      // Reverse geocode to get address
+      SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+
+      if (result != null) {
+        setState(() {
+          _selectedDestination = result;
+        });
+
+        // Get directions to this location
+        if (controller.currentLocation.value != null) {
+          await controller.getDirections(
+            LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            LatLng(coordinates.latitude, coordinates.longitude),
+          );
+        }
+      } else {
+        Get.snackbar(
+          'Error',
+          'Could not find address for this location',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+    } catch (e) {
+      DevLogs.logError('Error handling map tap: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to process location',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      setState(() {
+        _isLoadingDestination = false;
+      });
+    }
+  }
+
+  // Build route preview card
+  Widget _buildRoutePreviewCard() {
+    if (_selectedDestination == null || controller.currentRoute.value == null) {
+      return SizedBox.shrink();
+    }
+
+    final route = controller.currentRoute.value!;
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Destination name
+            Text(
+              _selectedDestination!.name,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+
+            // Address
+            Text(
+              _selectedDestination!.address,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+
+            SizedBox(height: 12),
+
+            // Route info
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Distance
+                Row(
+                  children: [
+                    Icon(Icons.directions_car, size: 16, color: Colors.blue),
+                    SizedBox(width: 4),
+                    Text(
+                      _formatDistance(route.distance),
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+
+                // Duration
+                Row(
+                  children: [
+                    Icon(Icons.access_time, size: 16, color: Colors.blue),
+                    SizedBox(width: 4),
+                    Text(
+                      _formatDuration(route.duration),
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+
+                // ETA
+                Row(
+                  children: [
+                    Icon(Icons.flag, size: 16, color: Colors.green),
+                    SizedBox(width: 4),
+                    Text(
+                      _formatETA(route.duration),
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            SizedBox(height: 16),
+
+            // Action buttons
+            Row(
+              children: [
+                // Save button
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _showSavePlaceDialog(_selectedDestination!);
+                  },
+                  icon: Icon(Icons.star_border),
+                  label: Text('Save'),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: 8),
+
+                // Start navigation button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      controller.startNavigation();
+                      Get.toNamed(Routes.navigationScreen);
+                    },
+                    icon: Icon(Icons.navigation),
+                    label: Text('Start'),
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: 8),
+
+                // Close button
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedDestination = null;
+                    });
+                    controller.currentRoute.value = null;
+
+                    // Clear map
+                    if (controller.mapController.value != null) {
+                      controller.mapController.value!.clearSymbols();
+                      controller.mapController.value!.clearLines();
+                    }
+                  },
+                  icon: Icon(Icons.close),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.grey[200],
+                    shape: CircleBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Show dialog to save place
+  void _showSavePlaceDialog(SearchResult destination) {
+    final TextEditingController nameController = TextEditingController(text: destination.name);
+    String selectedCategory = 'other';
+
+    Get.dialog(
+      AlertDialog(
+        title: Text('Save Place'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: selectedCategory,
+              decoration: InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(),
+              ),
+              items: controller.getPlaceCategories().map((category) {
+                return DropdownMenuItem<String>(
+                  value: category['id'],
+                  child: Row(
+                    children: [
+                      Icon(IconData(
+                        category['icon'].codePointAt(0),
+                        fontFamily: 'MaterialIcons',
+                      )),
+                      SizedBox(width: 8),
+                      Text(category['name']),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                selectedCategory = value!;
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              controller.addToFavorites(
+                destination.latitude,
+                destination.longitude,
+                nameController.text,
+                destination.address,
+                category: selectedCategory,
+              );
+              Get.back();
+            },
+            child: Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Format distance
+  String _formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.toInt()} m';
+    } else {
+      return '${(meters / 1000).toStringAsFixed(1)} km';
+    }
+  }
+
+  // Format duration
+  String _formatDuration(double seconds) {
+    int minutes = (seconds / 60).floor();
+    int hours = (minutes / 60).floor();
+    minutes = minutes % 60;
+
+    if (hours > 0) {
+      return '$hours h $minutes min';
+    } else {
+      return '$minutes min';
+    }
+  }
+
+  // Format ETA
+  String _formatETA(double seconds) {
+    final now = DateTime.now();
+    final arrival = now.add(Duration(seconds: seconds.toInt()));
+
+    return '${arrival.hour}:${arrival.minute.toString().padLeft(2, '0')}';
+  }
+
   // Create custom marker image
   Future<Uint8List> _createMarkerImage(Color color, IconData icon) async {
     final PictureRecorder recorder = PictureRecorder();
@@ -258,3 +601,4 @@ class _MapsTabState extends State<MapsTab> {
     return byteData!.buffer.asUint8List();
   }
 }
+

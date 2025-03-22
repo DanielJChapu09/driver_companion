@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../model/search_result_model.dart';
 import '../model/route_model.dart';
 
+
 class MapboxService {
   final String _accessToken;
   final Uuid _uuid = Uuid();
@@ -67,8 +68,7 @@ class MapboxService {
     }
   }
 
-
-
+  // Get directions between two points with optional waypoints and alternatives
   Future<NavigationRoute?> getDirections(
       LatLng origin, LatLng destination, {
         String profile = 'driving',
@@ -94,6 +94,8 @@ class MapboxService {
       url += '&overview=full';
       url += '&steps=true';
       url += '&language=$language';
+      url += '&voice_instructions=true';
+      url += '&banner_instructions=true';
 
       if (alternatives) {
         url += '&alternatives=true';
@@ -194,12 +196,13 @@ class MapboxService {
     }
   }
 
-
   // Reverse geocode (get address from coordinates)
   Future<SearchResult?> reverseGeocode(LatLng coordinates) async {
     try {
       String url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/${coordinates.longitude},${coordinates.latitude}.json';
       url += '?access_token=$_accessToken';
+      url += '&types=address,poi,place';
+      url += '&limit=1';
 
       final response = await http.get(Uri.parse(url));
 
@@ -213,13 +216,25 @@ class MapboxService {
 
         final feature = features[0];
         final featureCoordinates = feature['geometry']['coordinates'] as List;
+        final properties = feature['properties'] as Map<String, dynamic>? ?? {};
+
+        // Extract place details
+        String name = feature['text'] ?? '';
+        String address = feature['place_name'] ?? '';
+
+        // If name is empty, use the first part of the address
+        if (name.isEmpty && address.isNotEmpty) {
+          name = address.split(',').first;
+        }
 
         return SearchResult(
           id: feature['id'] ?? _uuid.v4(),
-          name: feature['text'] ?? '',
-          address: feature['place_name'] ?? '',
+          name: name,
+          address: address,
           latitude: featureCoordinates[1],
           longitude: featureCoordinates[0],
+          category: properties['category'],
+          properties: properties,
         );
       } else {
         DevLogs.logError('Failed to reverse geocode: ${response.statusCode}');
@@ -231,4 +246,3 @@ class MapboxService {
     }
   }
 }
-

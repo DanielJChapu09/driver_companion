@@ -12,10 +12,50 @@ class NavigationScreen extends StatefulWidget {
   State<NavigationScreen> createState() => _NavigationScreenState();
 }
 
-class _NavigationScreenState extends State<NavigationScreen> {
+class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
   final NavigationController controller = Get.find<NavigationController>();
   bool _darkMode = true;
   bool _showFullInstructions = false;
+  bool _showSpeedLimit = true;
+  bool _showLanes = true;
+  bool _showTraffic = true;
+  bool _followMode = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Check system brightness to set initial dark mode
+    final brightness = MediaQuery.of(Get.context!).platformBrightness;
+    _darkMode = brightness == Brightness.dark;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    // Update dark mode when system brightness changes
+    final brightness = MediaQuery.of(Get.context!).platformBrightness;
+    setState(() {
+      _darkMode = brightness == Brightness.dark;
+    });
+
+    // Update map style
+    if (controller.mapController.value != null) {
+      if (_darkMode) {
+      //  controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
+      } else {
+      //  controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
+      }
+    }
+
+    super.didChangePlatformBrightness();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,8 +72,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
               accessToken: APIKeys.MAPBOXPUBLICTOKEN,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
-                  controller.currentLocation.value!.latitude!,
-                  controller.currentLocation.value!.longitude!,
+                  controller.currentLocation.value!.latitude,
+                  controller.currentLocation.value!.longitude,
                 ),
                 zoom: 16.0,
                 tilt: 45.0,
@@ -44,18 +84,23 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
                 // Set dark mode if enabled
                 if (_darkMode) {
-                  // mapController.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
+                  //mapController.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
                 } else {
-                  // mapController.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
+                  //mapController.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
                 }
 
                 // Draw route
                 if (controller.currentRoute.value != null) {
                   _drawRouteOnMap(mapController, controller.currentRoute.value!);
                 }
+
+                // Set traffic visibility
+                //mapController.setLayerVisibility("traffic", _showTraffic);
               },
               myLocationEnabled: true,
-              myLocationTrackingMode: MyLocationTrackingMode.TrackingGPS,
+              myLocationTrackingMode: _followMode
+                  ? MyLocationTrackingMode.TrackingGPS
+                  : MyLocationTrackingMode.None,
               compassEnabled: true,
             );
           }),
@@ -103,6 +148,24 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 onPressed: () {
                   _showSettingsBottomSheet();
                 },
+              ),
+            ),
+          ),
+
+          // Follow mode toggle button
+          Positioned(
+            bottom: MediaQuery.of(context).padding.bottom + 100,
+            right: 10,
+            child: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: IconButton(
+                icon: Icon(_followMode ? Icons.gps_fixed : Icons.gps_not_fixed),
+                onPressed: () {
+                  setState(() {
+                    _followMode = !_followMode;
+                  });
+                },
+                tooltip: _followMode ? 'Disable follow mode' : 'Enable follow mode',
               ),
             ),
           ),
@@ -164,7 +227,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          _formatDistance(currentStep.distance),
+                          '${_formatDistance(currentStep.distance)}',
                           style: TextStyle(
                             fontSize: 14,
                             color: _darkMode ? Colors.white70 : Colors.black54,
@@ -198,7 +261,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                             ),
                             SizedBox(height: 2),
                             Text(
-                              _formatDistance(nextStep.distance),
+                              '${_formatDistance(nextStep.distance)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: _darkMode ? Colors.white54 : Colors.black38,
@@ -234,12 +297,85 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     ),
                   ],
                 ),
+
+                // Show speed limit if enabled
+                if (_showSpeedLimit) ...[
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.red,
+                            width: 2,
+                          ),
+                        ),
+                        child: Text(
+                          '60', // This would be dynamic in a real app
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Speed limit',
+                        style: TextStyle(
+                          color: _darkMode ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                      Spacer(),
+                      Text(
+                        '55 km/h', // Current speed would be dynamic
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _darkMode ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
+                // Show lane guidance if enabled
+                if (_showLanes && currentStep.maneuver == 'turn') ...[
+                  SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildLaneGuidance(true),
+                      _buildLaneGuidance(true),
+                      _buildLaneGuidance(false),
+                      _buildLaneGuidance(false),
+                    ],
+                  ),
+                ],
               ],
             ],
           ),
         ),
       );
     });
+  }
+
+  Widget _buildLaneGuidance(bool isRecommended) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 4),
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: isRecommended
+            ? (_darkMode ? Colors.blue : Colors.blue[700])
+            : (_darkMode ? Colors.grey[800] : Colors.grey[300]),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(
+        Icons.arrow_upward,
+        color: isRecommended ? Colors.white : (_darkMode ? Colors.white54 : Colors.black54),
+      ),
+    );
   }
 
   Widget _buildBottomControls() {
@@ -253,10 +389,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
             icon: Icons.volume_up,
             label: 'Sound',
             onTap: () {
-              // Toggle sound
+              controller.toggleVoiceGuidance();
               Get.snackbar(
-                'Sound',
-                'Sound settings toggled',
+                'Voice Guidance',
+                controller.voiceGuidanceEnabled.value ? 'Enabled' : 'Disabled',
                 snackPosition: SnackPosition.BOTTOM,
               );
             },
@@ -272,9 +408,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
               // Update map style
               if (controller.mapController.value != null) {
                 if (_darkMode) {
-                  // controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
+                  //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
                 } else {
-                  // controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
+                  //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
                 }
               }
             },
@@ -466,9 +602,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   // Update map style
                   if (controller.mapController.value != null) {
                     if (_darkMode) {
-                      // controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
+                      //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
                     } else {
-                      // controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
+                      //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
                     }
                   }
 
@@ -487,13 +623,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   color: _darkMode ? Colors.white : Colors.black,
                 ),
               ),
-              trailing: Switch(
-                value: true,
+              trailing: Obx(() => Switch(
+                value: controller.voiceGuidanceEnabled.value,
                 onChanged: (value) {
-                  // Toggle voice guidance
-                  Get.back();
+                  controller.toggleVoiceGuidance();
                 },
-              ),
+              )),
             ),
             ListTile(
               leading: Icon(
@@ -507,10 +642,52 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 ),
               ),
               trailing: Switch(
-                value: true,
+                value: _showSpeedLimit,
                 onChanged: (value) {
-                  // Toggle speed limit alerts
-                  Get.back();
+                  setState(() {
+                    _showSpeedLimit = value;
+                  });
+                },
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.traffic,
+                color: _darkMode ? Colors.white : Colors.black,
+              ),
+              title: Text(
+                'Show Traffic',
+                style: TextStyle(
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
+              ),
+              trailing: Switch(
+                value: _showTraffic,
+                onChanged: (value) {
+                  setState(() {
+                    _showTraffic = value;
+                  });
+                  controller.toggleTraffic();
+                },
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.call_split,
+                color: _darkMode ? Colors.white : Colors.black,
+              ),
+              title: Text(
+                'Lane Guidance',
+                style: TextStyle(
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
+              ),
+              trailing: Switch(
+                value: _showLanes,
+                onChanged: (value) {
+                  setState(() {
+                    _showLanes = value;
+                  });
                 },
               ),
             ),
@@ -616,4 +793,3 @@ class _NavigationScreenState extends State<NavigationScreen> {
     return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
   }
 }
-

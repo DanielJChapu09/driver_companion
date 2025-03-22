@@ -23,6 +23,7 @@ class NavigationController extends GetxController {
   final RxList<Place> favoritePlaces = <Place>[].obs;
   final RxList<Place> recentPlaces = <Place>[].obs;
   final Rx<NavigationRoute?> currentRoute = Rx<NavigationRoute?>(null);
+  final RxList<NavigationRoute> alternativeRoutes = <NavigationRoute>[].obs;
   final RxBool isNavigating = false.obs;
   final RxBool isLoading = false.obs;
   final RxString currentInstruction = ''.obs;
@@ -33,6 +34,8 @@ class NavigationController extends GetxController {
   final RxString errorMessage = ''.obs;
   final RxString searchQuery = ''.obs;
   final RxBool isSearching = false.obs;
+  final RxBool showTraffic = true.obs;
+  final RxBool voiceGuidanceEnabled = true.obs;
 
   // Map controller
   Rx<MapboxMapController?> mapController = Rx<MapboxMapController?>(null);
@@ -57,6 +60,12 @@ class NavigationController extends GetxController {
 
     _navigationService.instructionStream.listen((instruction) {
       currentInstruction.value = instruction;
+
+      // Simulate voice guidance
+      if (voiceGuidanceEnabled.value) {
+        // In a real app, this would use text-to-speech
+        DevLogs.logInfo('Voice guidance: $instruction');
+      }
     });
 
     _navigationService.distanceStream.listen((distance) {
@@ -165,6 +174,7 @@ class NavigationController extends GetxController {
     isLoading.value = true;
 
     try {
+      // Get primary route
       NavigationRoute? route = await mapboxService.getDirections(
         origin,
         destination,
@@ -172,6 +182,19 @@ class NavigationController extends GetxController {
 
       if (route != null) {
         currentRoute.value = route;
+
+        // Get alternative routes
+        NavigationRoute? alternativeRoute = await mapboxService.getDirections(
+          origin,
+          destination,
+          alternatives: true,
+        );
+
+        if (alternativeRoute != null) {
+          alternativeRoutes.value = [alternativeRoute];
+        } else {
+          alternativeRoutes.clear();
+        }
 
         // Draw route on map
         if (mapController.value != null) {
@@ -400,7 +423,7 @@ class NavigationController extends GetxController {
     // Decode polyline
     List<LatLng> points = _decodePolyline(route.geometry);
 
-    // Add line
+    // Add main route line
     mapController.value!.addLine(
       LineOptions(
         geometry: points,
@@ -409,6 +432,20 @@ class NavigationController extends GetxController {
         lineOpacity: 0.8,
       ),
     );
+
+    // Add alternative routes if available
+    for (var altRoute in alternativeRoutes) {
+      List<LatLng> altPoints = _decodePolyline(altRoute.geometry);
+      mapController.value!.addLine(
+        LineOptions(
+          geometry: altPoints,
+          lineColor: "#888888",
+          lineWidth: 3.0,
+          lineOpacity: 0.6,
+          linePattern: "dash",
+        ),
+      );
+    }
 
     // Add start and end markers
     mapController.value!.addSymbol(
@@ -495,5 +532,36 @@ class NavigationController extends GetxController {
 
     _navigationService.simulateNavigation(currentRoute.value!);
     isNavigating.value = true;
+  }
+
+  // Toggle traffic display
+  void toggleTraffic() {
+    showTraffic.value = !showTraffic.value;
+
+    if (mapController.value != null) {
+      //mapController.value!.setLayerVisibility("traffic", showTraffic.value);
+    }
+  }
+
+  // Toggle voice guidance
+  void toggleVoiceGuidance() {
+    voiceGuidanceEnabled.value = !voiceGuidanceEnabled.value;
+  }
+
+  // Switch to alternative route
+  void switchToAlternativeRoute(int index) {
+    if (index < 0 || index >= alternativeRoutes.length) return;
+
+    NavigationRoute selectedRoute = alternativeRoutes[index];
+    NavigationRoute? currentMainRoute = currentRoute.value;
+
+    if (currentMainRoute != null) {
+      // Swap routes
+      alternativeRoutes[index] = currentMainRoute;
+      currentRoute.value = selectedRoute;
+
+      // Redraw routes
+      _drawRouteOnMap(selectedRoute);
+    }
   }
 }
