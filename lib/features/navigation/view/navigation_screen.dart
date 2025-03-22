@@ -164,7 +164,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          '${_formatDistance(currentStep.distance)}',
+                          _formatDistance(currentStep.distance),
                           style: TextStyle(
                             fontSize: 14,
                             color: _darkMode ? Colors.white70 : Colors.black54,
@@ -198,7 +198,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                             ),
                             SizedBox(height: 2),
                             Text(
-                              '${_formatDistance(nextStep.distance)}',
+                              _formatDistance(nextStep.distance),
                               style: TextStyle(
                                 fontSize: 12,
                                 color: _darkMode ? Colors.white54 : Colors.black38,

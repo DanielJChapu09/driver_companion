@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:mymaptest/core/utils/logs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../model/place_model.dart';
@@ -21,7 +22,7 @@ class PlacesService {
       List<dynamic> placesList = jsonDecode(placesJson);
       return placesList.map((place) => Place.fromJson(place)).toList();
     } catch (e) {
-      print('Error getting favorite places: $e');
+      DevLogs.logError('Error getting favorite places: $e');
       return [];
     }
   }
@@ -39,7 +40,7 @@ class PlacesService {
       List<dynamic> placesList = jsonDecode(placesJson);
       return placesList.map((place) => Place.fromJson(place)).toList();
     } catch (e) {
-      print('Error getting recent places: $e');
+      DevLogs.logError('Error getting recent places: $e');
       return [];
     }
   }
@@ -71,7 +72,7 @@ class PlacesService {
 
       return true;
     } catch (e) {
-      print('Error adding favorite place: $e');
+      DevLogs.logError('Error adding favorite place: $e');
       return false;
     }
   }
@@ -89,7 +90,7 @@ class PlacesService {
 
       return true;
     } catch (e) {
-      print('Error removing favorite place: $e');
+      DevLogs.logError('Error removing favorite place: $e');
       return false;
     }
   }
@@ -132,7 +133,7 @@ class PlacesService {
 
       return true;
     } catch (e) {
-      print('Error adding recent place: $e');
+      DevLogs.logError('Error adding recent place: $e');
       return false;
     }
   }
@@ -144,7 +145,7 @@ class PlacesService {
       await prefs.remove(_recentPlacesKey);
       return true;
     } catch (e) {
-      print('Error clearing recent places: $e');
+      DevLogs.logError('Error clearing recent places: $e');
       return false;
     }
   }
@@ -176,7 +177,7 @@ class PlacesService {
 
       return true;
     } catch (e) {
-      print('Error updating place: $e');
+      DevLogs.logError('Error updating place: $e');
       return false;
     }
   }
@@ -202,7 +203,7 @@ class PlacesService {
 
       return null;
     } catch (e) {
-      print('Error getting place by ID: $e');
+      DevLogs.logError('Error getting place by ID: $e');
       return null;
     }
   }

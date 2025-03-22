@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:mymaptest/core/utils/logs.dart';
 
 import '../model/place_model.dart';
 import '../model/route_model.dart';
@@ -100,7 +101,7 @@ class NavigationController extends GetxController {
     } catch (e) {
       isLoading.value = false;
       errorMessage.value = 'Error initializing services: $e';
-      print('Error initializing services: $e');
+      DevLogs.logError('Error initializing services: $e');
     }
   }
 
@@ -113,7 +114,7 @@ class NavigationController extends GetxController {
       List<Place> recents = await _placesService.getRecentPlaces();
       recentPlaces.value = recents;
     } catch (e) {
-      print('Error loading saved places: $e');
+      DevLogs.logError('Error loading saved places: $e');
     }
   }
 
@@ -150,7 +151,7 @@ class NavigationController extends GetxController {
       isSearching.value = false;
     } catch (e) {
       isSearching.value = false;
-      print('Error searching places: $e');
+      DevLogs.logError('Error searching places: $e');
       Get.snackbar(
         'Error',
         'Failed to search places',
@@ -187,7 +188,7 @@ class NavigationController extends GetxController {
       isLoading.value = false;
     } catch (e) {
       isLoading.value = false;
-      print('Error getting directions: $e');
+      DevLogs.logError('Error getting directions: $e');
       Get.snackbar(
         'Error',
         'Failed to get directions',
@@ -222,7 +223,7 @@ class NavigationController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error starting navigation: $e');
+      DevLogs.logError('Error starting navigation: $e');
       Get.snackbar(
         'Error',
         'Failed to start navigation',
@@ -272,7 +273,7 @@ class NavigationController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error adding to favorites: $e');
+      DevLogs.logError('Error adding to favorites: $e');
       Get.snackbar(
         'Error',
         'Failed to add place to favorites',
@@ -301,7 +302,7 @@ class NavigationController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error removing from favorites: $e');
+      DevLogs.logError('Error removing from favorites: $e');
       Get.snackbar(
         'Error',
         'Failed to remove place from favorites',
@@ -327,7 +328,7 @@ class NavigationController extends GetxController {
       await _placesService.addRecentPlace(place);
       await loadSavedPlaces();
     } catch (e) {
-      print('Error adding to recent places: $e');
+      DevLogs.logError('Error adding to recent places: $e');
     }
   }
 
@@ -351,7 +352,7 @@ class NavigationController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error clearing recent places: $e');
+      DevLogs.logError('Error clearing recent places: $e');
       Get.snackbar(
         'Error',
         'Failed to clear recent places',
@@ -380,7 +381,7 @@ class NavigationController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error updating place: $e');
+      DevLogs.logError('Error updating place: $e');
       Get.snackbar(
         'Error',
         'Failed to update place',

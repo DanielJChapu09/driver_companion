@@ -131,6 +131,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
 
 
+
                   SmartDeviceCard(
                     onTap: ()=>Get.toNamed(Routes.community),
                     color: AppColors.blue,

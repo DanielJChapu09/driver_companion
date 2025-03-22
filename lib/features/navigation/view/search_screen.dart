@@ -6,8 +6,10 @@ import '../model/search_result_model.dart';
 import '../model/place_model.dart';
 
 class SearchScreen extends StatefulWidget {
+  const SearchScreen({super.key});
+
   @override
-  _SearchScreenState createState() => _SearchScreenState();
+  State<SearchScreen> createState() => _SearchScreenState();
 }
 
 class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderStateMixin {

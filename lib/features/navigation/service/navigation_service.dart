@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
+import 'package:mymaptest/core/utils/logs.dart';
 import '../model/route_model.dart';
 
 class NavigationService {
@@ -58,7 +59,7 @@ class NavigationService {
 
       return true;
     } catch (e) {
-      print('Error initializing navigation service: $e');
+      DevLogs.logError('Error initializing navigation service: $e');
       return false;
     }
   }
@@ -88,7 +89,7 @@ class NavigationService {
 
       return true;
     } catch (e) {
-      print('Error starting navigation: $e');
+      DevLogs.logError('Error starting navigation: $e');
       return false;
     }
   }
