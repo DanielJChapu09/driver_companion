@@ -49,14 +49,6 @@ class NavigationService {
           return false;
         }
       }
-
-      // Configure location settings
-      const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // 5 meters
-        timeLimit: Duration(seconds: 1), // 1 second
-      );
-
       return true;
     } catch (e) {
       DevLogs.logError('Error initializing navigation service: $e');

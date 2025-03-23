@@ -51,7 +51,7 @@ class NavigationRoute {
   final double distance;
   final double duration;
   final List<RouteStep> steps;
-  final String geometry; // Encoded polyline
+  final String geometry;
   final double startLatitude;
   final double startLongitude;
   final double endLatitude;

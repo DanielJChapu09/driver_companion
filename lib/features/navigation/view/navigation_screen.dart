@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import '../../../core/utils/logs.dart';
 import '../controller/navigation_controller.dart';
 import '../model/route_model.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -14,26 +16,53 @@ class NavigationScreen extends StatefulWidget {
 
 class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
   final NavigationController controller = Get.find<NavigationController>();
+  late FlutterTts flutterTts;
   bool _darkMode = true;
   bool _showFullInstructions = false;
   bool _showSpeedLimit = true;
   bool _showLanes = true;
   bool _showTraffic = true;
   bool _followMode = true;
+  MapboxMapController? _mapboxController;
+  bool _mapInitialized = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initializeTTS();
 
     // Check system brightness to set initial dark mode
     final brightness = MediaQuery.of(Get.context!).platformBrightness;
     _darkMode = brightness == Brightness.dark;
+
+    // Listen for instruction changes to speak them
+    ever(controller.currentInstruction, (instruction) {
+      if (controller.voiceGuidanceEnabled.value && instruction.isNotEmpty) {
+        _speakInstruction(instruction);
+      }
+    });
+  }
+
+  Future<void> _initializeTTS() async {
+    flutterTts = FlutterTts();
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.5);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+  }
+
+  Future<void> _speakInstruction(String instruction) async {
+    await flutterTts.speak(instruction);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    flutterTts.stop();
+    if (_mapboxController != null) {
+      _mapboxController!.dispose();
+    }
     super.dispose();
   }
 
@@ -46,15 +75,22 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     });
 
     // Update map style
-    if (controller.mapController.value != null) {
-      if (_darkMode) {
-      //  controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
-      } else {
-      //  controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
-      }
-    }
+    _updateMapStyle();
 
     super.didChangePlatformBrightness();
+  }
+
+  void _updateMapStyle() {
+    if (_mapboxController != null && _mapInitialized) {
+      try {
+        // String styleUrl = _darkMode
+        //     ? 'mapbox://styles/mapbox/navigation-night-v1'
+        //     : 'mapbox://styles/mapbox/navigation-day-v1';
+        // _mapboxController!.s(styleUrl);
+      } catch (e) {
+        DevLogs.logError('Error updating map style: $e');
+      }
+    }
   }
 
   @override
@@ -80,22 +116,30 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 bearing: controller.currentLocation.value!.heading.toDouble(),
               ),
               onMapCreated: (MapboxMapController mapController) {
+                _mapboxController = mapController;
                 controller.setMapController(mapController);
 
-                // Set dark mode if enabled
-                if (_darkMode) {
-                  //mapController.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
-                } else {
-                  //mapController.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
-                }
+                // Delay to ensure map is fully initialized
+                Future.delayed(Duration(milliseconds: 500), () {
+                  setState(() {
+                    _mapInitialized = true;
+                  });
 
-                // Draw route
-                if (controller.currentRoute.value != null) {
-                  _drawRouteOnMap(mapController, controller.currentRoute.value!);
-                }
+                  // Set map style
+                  _updateMapStyle();
 
-                // Set traffic visibility
-                //mapController.setLayerVisibility("traffic", _showTraffic);
+                  // Set traffic visibility
+                  try {
+                   // mapController.setLayerVisibility("traffic", _showTraffic);
+                  } catch (e) {
+                    print('Error setting traffic visibility: $e');
+                  }
+
+                  // Draw route if we have one
+                  if (controller.currentRoute.value != null) {
+                    _drawRouteOnMap(mapController, controller.currentRoute.value!);
+                  }
+                });
               },
               myLocationEnabled: true,
               myLocationTrackingMode: _followMode
@@ -203,7 +247,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           });
         },
         child: Container(
-          color: _darkMode ? Colors.black.withOpacity(0.8) : Colors.white,
+          color: _darkMode ? Colors.black.withValues(alpha: 0.8) : Colors.white,
           padding: EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,7 +271,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                         ),
                         SizedBox(height: 4),
                         Text(
-                          '${_formatDistance(currentStep.distance)}',
+                          _formatDistance(currentStep.distance),
                           style: TextStyle(
                             fontSize: 14,
                             color: _darkMode ? Colors.white70 : Colors.black54,
@@ -380,7 +424,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
   Widget _buildBottomControls() {
     return Container(
-      color: _darkMode ? Colors.black.withOpacity(0.8) : Colors.white,
+      color: _darkMode ? Colors.black.withValues(alpha: 0.8) : Colors.white,
       padding: EdgeInsets.all(16).copyWith(bottom: MediaQuery.of(context).padding.bottom + 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -404,15 +448,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
               setState(() {
                 _darkMode = !_darkMode;
               });
-
-              // Update map style
-              if (controller.mapController.value != null) {
-                if (_darkMode) {
-                  //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
-                } else {
-                  //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
-                }
-              }
+              _updateMapStyle();
             },
           ),
           _buildControlButton(
@@ -551,8 +587,18 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                       ),
                     ),
                     tileColor: isCurrentStep
-                        ? (_darkMode ? Colors.blue.withOpacity(0.2) : Colors.blue.withOpacity(0.1))
+                        ? (_darkMode ? Colors.blue.withValues(alpha: .2) : Colors.blue.withValues(alpha: 0.1))
                         : null,
+                    onTap: () {
+                      // Optionally allow jumping to a step for preview
+                      controller.currentStepIndex.value = index;
+                      Get.back();
+
+                      // Speak the instruction when tapped
+                      if (controller.voiceGuidanceEnabled.value) {
+                        _speakInstruction(step.instruction);
+                      }
+                    },
                   );
                 },
               ),
@@ -598,16 +644,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   setState(() {
                     _darkMode = value;
                   });
-
-                  // Update map style
-                  if (controller.mapController.value != null) {
-                    if (_darkMode) {
-                      //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-night-v1');
-                    } else {
-                      //controller.mapController.value!.setStyleString('mapbox://styles/mapbox/navigation-day-v1');
-                    }
-                  }
-
+                  _updateMapStyle();
                   Get.back();
                 },
               ),
@@ -627,6 +664,11 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 value: controller.voiceGuidanceEnabled.value,
                 onChanged: (value) {
                   controller.toggleVoiceGuidance();
+                  if (value && controller.currentInstruction.value.isNotEmpty) {
+                    _speakInstruction(controller.currentInstruction.value);
+                  } else if (!value) {
+                    flutterTts.stop();
+                  }
                 },
               )),
             ),
@@ -667,7 +709,13 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   setState(() {
                     _showTraffic = value;
                   });
-                  controller.toggleTraffic();
+                  if (_mapboxController != null && _mapInitialized) {
+                    try {
+                     // _mapboxController!.setLayerVisibility("traffic", _showTraffic);
+                    } catch (e) {
+                      DevLogs.logError('Error toggling traffic layer: $e');
+                    }
+                  }
                 },
               ),
             ),
@@ -708,65 +756,81 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   }
 
   void _drawRouteOnMap(MapboxMapController mapController, NavigationRoute route) {
-    // Clear previous routes
-    mapController.clearLines();
+    try {
+      // Clear previous routes
+      mapController.clearLines();
 
-    // Decode polyline
-    List<LatLng> points = _decodePolyline(route.geometry);
+      // Decode polyline
+      List<LatLng> points = _decodePolyline(route.geometry);
 
-    // Add line
-    mapController.addLine(
-      LineOptions(
-        geometry: points,
-        lineColor: "#3887be",
-        lineWidth: 5.0,
-        lineOpacity: 0.8,
-      ),
-    );
+      if (points.isEmpty) {
+        DevLogs.logError('No points to draw route');
+        return;
+      }
 
-    // Add destination marker
-    mapController.addSymbol(
-      SymbolOptions(
-        geometry: LatLng(route.endLatitude, route.endLongitude),
-        iconImage: "marker-end",
-        iconSize: 1.5,
-      ),
-    );
+      // Add line
+      mapController.addLine(
+        LineOptions(
+          geometry: points,
+          lineColor: "#3887be",
+          lineWidth: 5.0,
+          lineOpacity: 0.8,
+        ),
+      );
+
+      // Add destination marker
+      mapController.addSymbol(
+        SymbolOptions(
+          geometry: LatLng(route.endLatitude, route.endLongitude),
+          iconImage: "marker-15", // Use a default Mapbox icon
+          iconSize: 1.5,
+        ),
+      );
+    } catch (e) {
+      DevLogs.logError('Error drawing route on map: $e');
+    }
   }
 
   List<LatLng> _decodePolyline(String encoded) {
-    List<LatLng> points = [];
-    int index = 0, len = encoded.length;
-    int lat = 0, lng = 0;
+    if (encoded.isEmpty) return [];
 
-    while (index < len) {
-      int b, shift = 0, result = 0;
+    try {
+      List<LatLng> points = [];
+      int index = 0, len = encoded.length;
+      int lat = 0, lng = 0;
 
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
+      while (index < len) {
+        int b, shift = 0, result = 0;
 
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
+        do {
+          b = encoded.codeUnitAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
 
-      shift = 0;
-      result = 0;
+        int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
 
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
+        shift = 0;
+        result = 0;
 
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
+        do {
+          b = encoded.codeUnitAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
 
-      points.add(LatLng(lat / 1E6, lng / 1E6));
+        int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
+
+        points.add(LatLng(lat / 1E6, lng / 1E6));
+      }
+
+      return points;
+    } catch (e) {
+      DevLogs.logError('Error decoding polyline: $e');
+      return [];
     }
-
-    return points;
   }
 
   String _formatDistance(double distance) {
