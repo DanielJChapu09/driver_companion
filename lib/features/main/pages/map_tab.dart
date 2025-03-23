@@ -1,5 +1,3 @@
-import 'dart:typed_data' show Uint8List;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
@@ -11,9 +9,7 @@ import 'package:mymaptest/config/theme/app_colors.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
-
-import '../../../core/constants/map_styles.dart';
-import '../../../widgets/snackbar/custom_snackbar.dart';
+import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
 import '../../navigation/model/search_result_model.dart';
 
 class MapsTab extends StatefulWidget {
@@ -26,7 +22,6 @@ class MapsTab extends StatefulWidget {
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
   final MapController _mapController = MapController();
-  bool _initialPositionEstablished = false;
   bool _isLoadingDestination = false;
   SearchResult? _selectedDestination;
 
@@ -39,7 +34,9 @@ class _MapsTabState extends State<MapsTab> {
   Future<void> _getCurrentLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation
+        ),
       );
       controller.currentLocation.value = position;
     } catch (e) {
@@ -190,11 +187,12 @@ class _MapsTabState extends State<MapsTab> {
                 ),
 
 
-                if (controller.currentRoute.value != null)
+                if (controller.previewRoutePoints.value.isNotEmpty)
                   PolylineLayer(
                     polylines: [
                       Polyline(
-                        points: controller.currentRoute.value!.steps.map((step) => latlong2.LatLng(step.startLatitude, step.startLongitude)).toList(),
+                        points: controller.previewRoutePoints.value,
+                        // points: controller.currentRoute.value!.steps.map((step) => latlong2.LatLng(step.startLatitude, step.startLongitude)).toList(),
                         strokeWidth: 4.0,
                         color: AppColors.blue,
                       ),
@@ -295,37 +293,10 @@ class _MapsTabState extends State<MapsTab> {
             Positioned(
               bottom: 16,
               left: 16,
-              right: 80,
+              right: 70,
               child: _buildRoutePreviewCard(),
             ),
 
-          // Navigation button (only shown when route is available)
-          Obx(() {
-            if (controller.currentRoute.value != null && !controller.isNavigating.value) {
-              return Positioned(
-                bottom: 16,
-                left: 16,
-                right: 80,
-                child: ElevatedButton(
-                  onPressed: () {
-                    controller.startNavigation();
-                    Get.toNamed(Routes.navigationScreen);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    'Start Navigation',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              );
-            }
-            return SizedBox.shrink();
-          }),
 
           // Continue navigation button (only shown when navigating)
           Obx(() {
@@ -333,7 +304,7 @@ class _MapsTabState extends State<MapsTab> {
               return Positioned(
                 bottom: 16,
                 left: 16,
-                right: 80,
+                right: 70,
                 child: ElevatedButton(
                   onPressed: () => Get.toNamed(Routes.navigationScreen),
                   style: ElevatedButton.styleFrom(
@@ -385,60 +356,41 @@ class _MapsTabState extends State<MapsTab> {
         );
       }
 
-      setState(() {
-        _selectedDestination = SearchResult(
-          address: '',
-          id: '',
-          latitude: coordinates.latitude,
-          longitude: coordinates.longitude,
-          name: '',
-        );
-      });
+      // Reverse geocode to get address
+      SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
 
-      // Add route preview
+      if (result != null) {
+        setState(() {
+          _selectedDestination = result;
+        });
+
         // Get directions to this location
         if (controller.currentLocation.value != null) {
-          await controller.getDirections(
-            LatLng(
+
+          await controller.getRoutePreview(
+            latlong2.LatLng(
               controller.currentLocation.value!.latitude,
               controller.currentLocation.value!.longitude,
             ),
-            LatLng(coordinates.latitude, coordinates.longitude),
-          );
+            latlong2.LatLng(
+              coordinates.latitude,
+              coordinates.longitude,
+            )
+          ).then((value) async{
+            await controller.getDirections(
+              LatLng(
+                controller.currentLocation.value!.latitude,
+                controller.currentLocation.value!.longitude,
+              ),
+              LatLng(coordinates.latitude, coordinates.longitude),
+            );
+          });
         }
-
-
-      // Reverse geocode to get address
-      // SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
-      //
-      // if (result != null) {
-      //   setState(() {
-      //     _selectedDestination = result;
-      //   });
-      //
-      //   // Get directions to this location
-      //   if (controller.currentLocation.value != null) {
-      //     // await controller.getDirections(
-      //     //   LatLng(
-      //     //     controller.currentLocation.value!.latitude,
-      //     //     controller.currentLocation.value!.longitude,
-      //     //   ),
-      //     //   LatLng(coordinates.latitude, coordinates.longitude),
-      //     // );
-      //
-      //     await controller.getRoutePreview(
-      //         latlong2.LatLng(
-      //           controller.currentLocation.value!.latitude,
-      //           controller.currentLocation.value!.longitude,
-      //         ),
-      //         latlong2.LatLng(coordinates.latitude, coordinates.longitude),
-      //     );
-      //   }
-      // } else {
-      //   CustomSnackBar.showErrorSnackbar(
-      //     message: 'Could not find address for this location',
-      //   );
-      // }
+      } else {
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Could not find address for this location',
+        );
+      }
     } catch (e) {
       DevLogs.logError('Error handling map tap: $e');
       CustomSnackBar.showErrorSnackbar(
@@ -501,7 +453,7 @@ class _MapsTabState extends State<MapsTab> {
                 // Distance
                 Row(
                   children: [
-                    Icon(Icons.directions_car, size: 16, color: Colors.blue),
+                    Icon(Icons.directions_car, size: 16, color: AppColors.blue),
                     SizedBox(width: 4),
                     Text(
                       _formatDistance(route.distance),
@@ -513,7 +465,7 @@ class _MapsTabState extends State<MapsTab> {
                 // Duration
                 Row(
                   children: [
-                    Icon(Icons.access_time, size: 16, color: Colors.blue),
+                    Icon(Icons.access_time, size: 16, color: AppColors.blue),
                     SizedBox(width: 4),
                     Text(
                       _formatDuration(route.duration),
@@ -555,24 +507,6 @@ class _MapsTabState extends State<MapsTab> {
                   ),
                 ),
 
-                SizedBox(width: 8),
-
-                // Start navigation button
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      controller.startNavigation();
-                      Get.toNamed(Routes.navigationScreen);
-                    },
-                    icon: Icon(Icons.navigation),
-                    label: Text('Start'),
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
 
                 SizedBox(width: 8),
 
@@ -597,6 +531,20 @@ class _MapsTabState extends State<MapsTab> {
                   ),
                 ),
               ],
+            ),
+
+            ElevatedButton.icon(
+              onPressed: () {
+                controller.startNavigation();
+                Get.toNamed(Routes.navigationScreen);
+              },
+              icon: Icon(Icons.navigation),
+              label: Text('Start'),
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
           ],
         ),
@@ -703,33 +651,5 @@ class _MapsTabState extends State<MapsTab> {
     return '${arrival.hour}:${arrival.minute.toString().padLeft(2, '0')}';
   }
 
-  // Create custom marker image
-  Future<Uint8List> _createMarkerImage(Color color, IconData icon) async {
-    final PictureRecorder recorder = PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    final Paint paint = Paint()..color = color;
-    final TextPainter textPainter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icon.codePoint),
-        style: TextStyle(
-          fontSize: 40,
-          fontFamily: icon.fontFamily,
-          color: Colors.white,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-
-    textPainter.layout();
-
-    canvas.drawCircle(Offset(48, 48), 24, paint);
-    textPainter.paint(canvas, Offset(48 - textPainter.width / 2, 48 - textPainter.height / 2));
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(96, 96);
-    final byteData = await img.toByteData(format: ImageByteFormat.png);
-
-    return byteData!.buffer.asUint8List();
-  }
 }
 

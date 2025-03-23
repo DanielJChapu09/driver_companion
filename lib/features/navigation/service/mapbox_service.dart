@@ -194,10 +194,12 @@ class MapboxService {
   // Reverse geocode (get address from coordinates)
   Future<SearchResult?> reverseGeocode(LatLng coordinates) async {
     try {
+
+
       String url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/${coordinates.longitude},${coordinates.latitude}.json';
       url += '?access_token=$_accessToken';
-      url += '&types=address,poi,place';
-      url += '&limit=1';
+      //url += '&types=address,poi,place';
+      // url += '&limit=1';
 
       final response = await http.get(Uri.parse(url));
 
@@ -205,12 +207,16 @@ class MapboxService {
         final data = jsonDecode(response.body);
         final features = data['features'] as List;
 
+        DevLogs.logWarning('Tapped POINT: Latitude ${coordinates.latitude} Longitude ${coordinates.longitude}');
+
+        DevLogs.logInfo('Reverse geocode response: $data');
+
         if (features.isEmpty) {
           return null;
         }
 
         final feature = features[0];
-        final featureCoordinates = feature['geometry']['coordinates'] as List;
+        final featureCoordinates = data['query'] as List;
         final properties = feature['properties'] as Map<String, dynamic>? ?? {};
 
         // Extract place details
