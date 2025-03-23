@@ -24,7 +24,7 @@ class NavigationController extends GetxController {
   final RxList<Place> favoritePlaces = <Place>[].obs;
   final RxList<Place> recentPlaces = <Place>[].obs;
   final Rx<NavigationRoute?> currentRoute = Rx<NavigationRoute?>(null);
-  final Rx<List<latlong2.LatLng>> previewRoutePoints = Rx<List<latlong2.LatLng>>([]);
+  // final Rx<List<latlong2.LatLng>> previewRoutePoints = Rx<List<latlong2.LatLng>>([]);
   final RxList<NavigationRoute> alternativeRoutes = <NavigationRoute>[].obs;
   final RxBool isNavigating = false.obs;
   final RxBool isLoading = false.obs;
@@ -206,37 +206,37 @@ class NavigationController extends GetxController {
     }
   }
 
-  Future<void> getRoutePreview(latlong2.LatLng origin, latlong2.LatLng destination) async {
-    isLoading.value = true;
-
-    try {
-      // Get primary route
-      List<latlong2.LatLng>? route = await mapboxService.getPreviewRoute(
-        wayPoints: [
-          origin,
-          destination,
-        ]
-      );
-
-      if (route.isNotEmpty) {
-        previewRoutePoints.value = route;
-
-      } else {
-        CustomSnackBar.showErrorSnackbar(
-          message: 'Could not find a route to the destination',
-        );
-      }
-
-      isLoading.value = false;
-    } catch (e) {
-      isLoading.value = false;
-      DevLogs.logError('Error getting directions: $e');
-
-      CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
-
-    }
-  }
-
+  // Future<void> getRoutePreview(latlong2.LatLng origin, latlong2.LatLng destination) async {
+  //   isLoading.value = true;
+  //
+  //   try {
+  //     // Get primary route
+  //     List<latlong2.LatLng>? route = await mapboxService.getPreviewRoute(
+  //       wayPoints: [
+  //         origin,
+  //         destination,
+  //       ]
+  //     );
+  //
+  //     if (route.isNotEmpty) {
+  //       previewRoutePoints.value = route;
+  //
+  //     } else {
+  //       CustomSnackBar.showErrorSnackbar(
+  //         message: 'Could not find a route to the destination',
+  //       );
+  //     }
+  //
+  //     isLoading.value = false;
+  //   } catch (e) {
+  //     isLoading.value = false;
+  //     DevLogs.logError('Error getting directions: $e');
+  //
+  //     CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
+  //
+  //   }
+  // }
+  //
 
   // Start navigation
   Future<void> startNavigation() async {

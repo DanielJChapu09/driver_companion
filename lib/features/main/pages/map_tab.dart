@@ -190,11 +190,11 @@ class _MapsTabState extends State<MapsTab> {
                 ),
 
 
-                if (controller.previewRoutePoints.value.isNotEmpty)
+                if (controller.currentRoute.value != null)
                   PolylineLayer(
                     polylines: [
                       Polyline(
-                        points: controller.previewRoutePoints.value,
+                        points: controller.currentRoute.value!.steps.map((step) => latlong2.LatLng(step.startLatitude, step.startLongitude)).toList(),
                         strokeWidth: 4.0,
                         color: AppColors.blue,
                       ),
@@ -398,20 +398,12 @@ class _MapsTabState extends State<MapsTab> {
       // Add route preview
         // Get directions to this location
         if (controller.currentLocation.value != null) {
-          // await controller.getDirections(
-          //   LatLng(
-          //     controller.currentLocation.value!.latitude,
-          //     controller.currentLocation.value!.longitude,
-          //   ),
-          //   LatLng(coordinates.latitude, coordinates.longitude),
-          // );
-
-          await controller.getRoutePreview(
-              latlong2.LatLng(
-                controller.currentLocation.value!.latitude,
-                controller.currentLocation.value!.longitude,
-              ),
-              latlong2.LatLng(coordinates.latitude, coordinates.longitude),
+          await controller.getDirections(
+            LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            LatLng(coordinates.latitude, coordinates.longitude),
           );
         }
 
