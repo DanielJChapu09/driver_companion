@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
 import '../controller/community_controller.dart';
 
 class CreateNotificationScreen extends StatefulWidget {
@@ -60,10 +61,8 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
 
   void _submitNotification() {
     if (messageController.text.trim().isEmpty) {
-      Get.snackbar(
-        'Error',
-        'Please enter a message',
-        snackPosition: SnackPosition.BOTTOM,
+      CustomSnackBar.showErrorSnackbar(
+        message: 'Please enter a message'
       );
       return;
     }
@@ -73,6 +72,11 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
       type: selectedType,
       images: selectedImages,
     ).then((_) {
+      CustomSnackBar.showSuccessSnackbar(
+          message: 'Notification broadcasted'
+      );
+
+      Get.back();
       Get.back();
     });
   }
@@ -179,7 +183,7 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
                             ),
                             SizedBox(height: 8),
                             Text(
-                              type['type'].capitalize!,
+                              type['type'].toString(),
                               style: TextStyle(
                                 color: isSelected ? type['color'] : Colors.black,
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -242,7 +246,7 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
               ),
               SizedBox(height: 8),
               if (selectedImages.isNotEmpty)
-                Container(
+                SizedBox(
                   height: 120,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
