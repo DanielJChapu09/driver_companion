@@ -1,16 +1,19 @@
-import 'dart:math';
 import 'dart:typed_data' show Uint8List;
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:latlong2/latlong.dart' as latlong2;
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import 'package:mymaptest/config/theme/app_colors.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
 
+import '../../../core/constants/map_styles.dart';
+import '../../../widgets/snackbar/custom_snackbar.dart';
 import '../../navigation/model/search_result_model.dart';
 
 class MapsTab extends StatefulWidget {
@@ -22,6 +25,7 @@ class MapsTab extends StatefulWidget {
 
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
+  final MapController _mapController = MapController();
   bool _initialPositionEstablished = false;
   bool _isLoadingDestination = false;
   SearchResult? _selectedDestination;
@@ -39,7 +43,7 @@ class _MapsTabState extends State<MapsTab> {
       );
       controller.currentLocation.value = position;
     } catch (e) {
-      print('Error getting current location: $e');
+      DevLogs.logError('Error getting current location: $e');
     }
   }
 
@@ -54,50 +58,150 @@ class _MapsTabState extends State<MapsTab> {
               return Center(child: CircularProgressIndicator());
             }
 
-            return MapboxMap(
-              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
-              initialCameraPosition: CameraPosition(
-                target: LatLng(
+            // return MapboxMap(
+            //   accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+            //   initialCameraPosition: CameraPosition(
+            //     target: LatLng(
+            //       controller.currentLocation.value!.latitude,
+            //       controller.currentLocation.value!.longitude,
+            //     ),
+            //     zoom: 14.0,
+            //   ),
+            //   onMapCreated: (MapboxMapController mapController) async {
+            //     controller.setMapController(mapController);
+            //
+            //     // Add custom markers
+            //     mapController.addImage(
+            //       "marker-start",
+            //       await _createMarkerImage(Colors.green, Icons.trip_origin),
+            //     );
+            //
+            //     mapController.addImage(
+            //       "marker-end",
+            //       await _createMarkerImage(Colors.red, Icons.place),
+            //     );
+            //
+            //     // Center on user's location once map is created
+            //     if (!_initialPositionEstablished && controller.currentLocation.value != null) {
+            //       mapController.animateCamera(
+            //         CameraUpdate.newLatLngZoom(
+            //           LatLng(
+            //             controller.currentLocation.value!.latitude,
+            //             controller.currentLocation.value!.longitude,
+            //           ),
+            //           15.0,
+            //         ),
+            //       );
+            //       _initialPositionEstablished = true;
+            //     }
+            //   },
+            //   onMapClick: _handleMapTap,
+            //   myLocationEnabled: true,
+            //   myLocationTrackingMode: MyLocationTrackingMode.Tracking,
+            //   compassEnabled: true,
+            //   onStyleLoadedCallback: () {
+            //     DevLogs.logSuccess('Map style loaded');
+            //   },
+            // );
+
+            return FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: latlong2.LatLng(
                   controller.currentLocation.value!.latitude,
                   controller.currentLocation.value!.longitude,
                 ),
-                zoom: 14.0,
+                initialZoom: 16,
+                maxZoom: 40,
+                minZoom: 0,
+
+                onTap: (tapPosition, point) {
+                  _handleMapTap(coordinates: LatLng(point.latitude, point.longitude));
+                },
+
               ),
-              onMapCreated: (MapboxMapController mapController) async {
-                controller.setMapController(mapController);
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${APIKeys.MAPBOXPUBLICTOKEN}',
+                  additionalOptions: {
+                    'accessToken': APIKeys.MAPBOXPUBLICTOKEN
+                  },
+                ),
 
-                // Add custom markers
-                mapController.addImage(
-                  "marker-start",
-                  await _createMarkerImage(Colors.green, Icons.trip_origin),
-                );
-
-                mapController.addImage(
-                  "marker-end",
-                  await _createMarkerImage(Colors.red, Icons.place),
-                );
-
-                // Center on user's location once map is created
-                if (!_initialPositionEstablished && controller.currentLocation.value != null) {
-                  mapController.animateCamera(
-                    CameraUpdate.newLatLngZoom(
-                      LatLng(
-                        controller.currentLocation.value!.latitude,
-                        controller.currentLocation.value!.longitude,
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      width: 20,
+                      height: 20,
+                      point: latlong2.LatLng(controller.currentLocation.value!.latitude, controller.currentLocation.value!.longitude),
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color:
+                          Colors.green.withOpacity(0.5),
+                          borderRadius:
+                          BorderRadius.circular(
+                              20),
+                        ),
+                        child: Center(
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: 12,
+                                height:12,
+                                decoration: BoxDecoration(
+                                    color: AppColors.blue,
+                                    borderRadius:
+                                    BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.blue
+                                            .withValues(alpha: 0.5),
+                                        spreadRadius: 2,
+                                        blurRadius: 4,
+                                        offset:
+                                        const Offset(
+                                            0, 3),
+                                      ),
+                                    ],
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 1,
+                                    )),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      15.0,
                     ),
-                  );
-                  _initialPositionEstablished = true;
-                }
-              },
-              onMapClick: _handleMapTap,
-              myLocationEnabled: true,
-              myLocationTrackingMode: MyLocationTrackingMode.Tracking,
-              compassEnabled: true,
-              onStyleLoadedCallback: () {
-                DevLogs.logSuccess('Map style loaded');
-              },
+
+                    if(_selectedDestination != null) Marker(
+                      width: 20,
+                      height: 20,
+                      point: latlong2.LatLng(_selectedDestination!.latitude, _selectedDestination!.longitude),
+                      child: const Icon(
+                        Icons.location_on,
+                        color: Colors.orange,
+                        size: 50,
+                      ),
+                    ),
+                  ],
+                ),
+
+
+                if (controller.previewRoutePoints.value.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: controller.previewRoutePoints.value,
+                        strokeWidth: 4.0,
+                        color: AppColors.blue,
+                      ),
+                    ],
+                  ),
+              ],
+
             );
           }),
 
@@ -254,7 +358,7 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   // Handle map tap to select destination
-  void _handleMapTap(Point<double> point, LatLng coordinates) async {
+  void _handleMapTap({required LatLng coordinates}) async {
     // Don't process taps if already loading or navigating
     if (_isLoadingDestination || controller.isNavigating.value) return;
 
@@ -281,37 +385,72 @@ class _MapsTabState extends State<MapsTab> {
         );
       }
 
-      // Reverse geocode to get address
-      SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+      setState(() {
+        _selectedDestination = SearchResult(
+          address: '',
+          id: '',
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+          name: '',
+        );
+      });
 
-      if (result != null) {
-        setState(() {
-          _selectedDestination = result;
-        });
-
+      // Add route preview
         // Get directions to this location
         if (controller.currentLocation.value != null) {
-          await controller.getDirections(
-            LatLng(
-              controller.currentLocation.value!.latitude,
-              controller.currentLocation.value!.longitude,
-            ),
-            LatLng(coordinates.latitude, coordinates.longitude),
+          // await controller.getDirections(
+          //   LatLng(
+          //     controller.currentLocation.value!.latitude,
+          //     controller.currentLocation.value!.longitude,
+          //   ),
+          //   LatLng(coordinates.latitude, coordinates.longitude),
+          // );
+
+          await controller.getRoutePreview(
+              latlong2.LatLng(
+                controller.currentLocation.value!.latitude,
+                controller.currentLocation.value!.longitude,
+              ),
+              latlong2.LatLng(coordinates.latitude, coordinates.longitude),
           );
         }
-      } else {
-        Get.snackbar(
-          'Error',
-          'Could not find address for this location',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-      }
+
+
+      // Reverse geocode to get address
+      // SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+      //
+      // if (result != null) {
+      //   setState(() {
+      //     _selectedDestination = result;
+      //   });
+      //
+      //   // Get directions to this location
+      //   if (controller.currentLocation.value != null) {
+      //     // await controller.getDirections(
+      //     //   LatLng(
+      //     //     controller.currentLocation.value!.latitude,
+      //     //     controller.currentLocation.value!.longitude,
+      //     //   ),
+      //     //   LatLng(coordinates.latitude, coordinates.longitude),
+      //     // );
+      //
+      //     await controller.getRoutePreview(
+      //         latlong2.LatLng(
+      //           controller.currentLocation.value!.latitude,
+      //           controller.currentLocation.value!.longitude,
+      //         ),
+      //         latlong2.LatLng(coordinates.latitude, coordinates.longitude),
+      //     );
+      //   }
+      // } else {
+      //   CustomSnackBar.showErrorSnackbar(
+      //     message: 'Could not find address for this location',
+      //   );
+      // }
     } catch (e) {
       DevLogs.logError('Error handling map tap: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to process location',
-        snackPosition: SnackPosition.BOTTOM,
+      CustomSnackBar.showErrorSnackbar(
+        message:'Failed to process location',
       );
     } finally {
       setState(() {

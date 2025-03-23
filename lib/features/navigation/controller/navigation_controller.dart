@@ -4,7 +4,8 @@ import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/core/utils/logs.dart';
-
+import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
+import 'package:latlong2/latlong.dart' as latlong2;
 import '../model/place_model.dart';
 import '../model/route_model.dart';
 import '../model/search_result_model.dart';
@@ -23,6 +24,7 @@ class NavigationController extends GetxController {
   final RxList<Place> favoritePlaces = <Place>[].obs;
   final RxList<Place> recentPlaces = <Place>[].obs;
   final Rx<NavigationRoute?> currentRoute = Rx<NavigationRoute?>(null);
+  final Rx<List<latlong2.LatLng>> previewRoutePoints = Rx<List<latlong2.LatLng>>([]);
   final RxList<NavigationRoute> alternativeRoutes = <NavigationRoute>[].obs;
   final RxBool isNavigating = false.obs;
   final RxBool isLoading = false.obs;
@@ -80,11 +82,7 @@ class NavigationController extends GetxController {
       hasArrived.value = arrived;
       if (arrived) {
         isNavigating.value = false;
-        Get.snackbar(
-          'Arrived',
-          'You have reached your destination',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        CustomSnackBar.showErrorSnackbar(message:'You have reached your destination',        );
       }
     });
   }
@@ -161,11 +159,7 @@ class NavigationController extends GetxController {
     } catch (e) {
       isSearching.value = false;
       DevLogs.logError('Error searching places: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to search places',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to search places',);
     }
   }
 
@@ -201,10 +195,35 @@ class NavigationController extends GetxController {
           _drawRouteOnMap(route);
         }
       } else {
-        Get.snackbar(
-          'No Route Found',
-          'Could not find a route to the destination',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showErrorSnackbar(message:'Could not find a route to the destination',    );
+      }
+
+      isLoading.value = false;
+    } catch (e) {
+      isLoading.value = false;
+      DevLogs.logError('Error getting directions: $e');
+      CustomSnackBar.showErrorSnackbar(message:'Failed to get directions', );
+    }
+  }
+
+  Future<void> getRoutePreview(latlong2.LatLng origin, latlong2.LatLng destination) async {
+    isLoading.value = true;
+
+    try {
+      // Get primary route
+      List<latlong2.LatLng>? route = await mapboxService.getPreviewRoute(
+        wayPoints: [
+          origin,
+          destination,
+        ]
+      );
+
+      if (route.isNotEmpty) {
+        previewRoutePoints.value = route;
+
+      } else {
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Could not find a route to the destination',
         );
       }
 
@@ -212,13 +231,12 @@ class NavigationController extends GetxController {
     } catch (e) {
       isLoading.value = false;
       DevLogs.logError('Error getting directions: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to get directions',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
+
     }
   }
+
 
   // Start navigation
   Future<void> startNavigation() async {
@@ -239,19 +257,11 @@ class NavigationController extends GetxController {
           );
         }
       } else {
-        Get.snackbar(
-          'Error',
-          'Failed to start navigation',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        CustomSnackBar.showErrorSnackbar(message:'Failed to start navigation', );
       }
     } catch (e) {
       DevLogs.logError('Error starting navigation: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to start navigation',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to start navigation', );
     }
   }
 
@@ -283,25 +293,13 @@ class NavigationController extends GetxController {
 
       if (added) {
         await loadSavedPlaces();
-        Get.snackbar(
-          'Success',
-          'Place added to favorites',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        CustomSnackBar.showSuccessSnackbar(message:'Place added to favorites',   );
       } else {
-        Get.snackbar(
-          'Error',
-          'Failed to add place to favorites',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        CustomSnackBar.showErrorSnackbar(message:'Failed to add place to favorites',    );
       }
     } catch (e) {
       DevLogs.logError('Error adding to favorites: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to add place to favorites',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      CustomSnackBar.showErrorSnackbar(message:'Failed to add place to favorites',);
     }
   }
 
@@ -312,24 +310,17 @@ class NavigationController extends GetxController {
 
       if (removed) {
         await loadSavedPlaces();
-        Get.snackbar(
-          'Success',
-          'Place removed from favorites',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showSuccessSnackbar(message:'Place removed from favorites',
         );
       } else {
-        Get.snackbar(
-          'Error',
-          'Failed to remove place from favorites',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showErrorSnackbar(
+          message:'Failed to remove place from favorites',
         );
       }
     } catch (e) {
       DevLogs.logError('Error removing from favorites: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to remove place from favorites',
-        snackPosition: SnackPosition.BOTTOM,
+      CustomSnackBar.showErrorSnackbar(
+        message:'Failed to remove place from favorites',
       );
     }
   }
@@ -362,24 +353,18 @@ class NavigationController extends GetxController {
 
       if (cleared) {
         recentPlaces.clear();
-        Get.snackbar(
-          'Success',
-          'Recent places cleared',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showSuccessSnackbar(
+          message:'Recent places cleared',
         );
       } else {
-        Get.snackbar(
-          'Error',
-          'Failed to clear recent places',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Failed to clear recent places',
         );
       }
     } catch (e) {
       DevLogs.logError('Error clearing recent places: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to clear recent places',
-        snackPosition: SnackPosition.BOTTOM,
+      CustomSnackBar.showErrorSnackbar(
+        message: 'Failed to clear recent places',
       );
     }
   }
@@ -391,24 +376,18 @@ class NavigationController extends GetxController {
 
       if (updated) {
         await loadSavedPlaces();
-        Get.snackbar(
-          'Success',
-          'Place updated',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showSuccessSnackbar(
+          message: 'Place updated',
         );
       } else {
-        Get.snackbar(
-          'Error',
-          'Failed to update place',
-          snackPosition: SnackPosition.BOTTOM,
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Failed to update place',
         );
       }
     } catch (e) {
       DevLogs.logError('Error updating place: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to update place',
-        snackPosition: SnackPosition.BOTTOM,
+      CustomSnackBar.showErrorSnackbar(
+        message:'Failed to update place',
       );
     }
   }

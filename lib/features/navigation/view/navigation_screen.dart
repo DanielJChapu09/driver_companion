@@ -77,7 +77,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 ),
                 zoom: 16.0,
                 tilt: 45.0,
-                bearing: controller.currentLocation.value!.heading?.toDouble() ?? 0.0,
+                bearing: controller.currentLocation.value!.heading.toDouble(),
               ),
               onMapCreated: (MapboxMapController mapController) {
                 controller.setMapController(mapController);

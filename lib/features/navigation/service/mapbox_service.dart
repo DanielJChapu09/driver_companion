@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart' as latlong2;
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:uuid/uuid.dart';
@@ -69,13 +70,7 @@ class MapboxService {
   }
 
   // Get directions between two points with optional waypoints and alternatives
-  Future<NavigationRoute?> getDirections(
-      LatLng origin, LatLng destination, {
-        String profile = 'driving',
-        List<LatLng> waypoints = const [],
-        bool alternatives = false,
-        String language = 'en',
-      }) async {
+  Future<NavigationRoute?> getDirections(LatLng origin, LatLng destination, {String profile = 'driving', List<LatLng> waypoints = const [], bool alternatives = false,  String language = 'en',}) async {
     try {
       // Build coordinates string
       String coordinates = '${origin.longitude},${origin.latitude};';
@@ -243,6 +238,35 @@ class MapboxService {
     } catch (e) {
       DevLogs.logError('Error reverse geocoding: $e');
       return null;
+    }
+  }
+
+  Future<List<latlong2.LatLng>> getPreviewRoute({required List<latlong2.LatLng> wayPoints}) async {
+    try{
+      final coordinates = wayPoints.map((waypoint) => "${waypoint.longitude},${waypoint.latitude}").join(';');
+
+      final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/$coordinates?geometries=geojson&access_token=$_accessToken';
+
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final route = data['routes'][0];
+        final geometry = route['geometry'];
+        final coordinates = geometry['coordinates'] as List;
+
+        List<latlong2.LatLng> routePoints = coordinates.map((coord) => latlong2.LatLng(coord[1], coord[0])).toList();
+
+        return routePoints;
+      } else {
+        DevLogs.logError('Failed to get preview route: ${response.statusCode}');
+        return [];
+      }
+    }
+
+    catch (e){
+      DevLogs.logError('Error getting preview route: $e');
+      return [];
     }
   }
 }
