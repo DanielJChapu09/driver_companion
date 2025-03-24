@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
@@ -10,7 +12,11 @@ import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
+import '../../driver_behaviour/controller/driver_behaviour_controller.dart';
 import '../../navigation/model/search_result_model.dart';
+import '../../navigation/view/navigation_screen.dart';
+import '../../navigation/view/saved_places_screen.dart';
+import '../../navigation/view/search_screen.dart';
 
 class MapsTab extends StatefulWidget {
   const MapsTab({super.key});
@@ -21,21 +27,36 @@ class MapsTab extends StatefulWidget {
 
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
+  final DriverBehaviorController behaviorController = Get.find<DriverBehaviorController>();
   final MapController _mapController = MapController();
+  late MapboxMapController _mapboxMapController;
   bool _isLoadingDestination = false;
   SearchResult? _selectedDestination;
+  bool _isInitialized = false;
+  Symbol? _destinationMarker;
+  Line? _routeLine;
+  bool _showingRoutePreview = false;
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _initDriverBehavior();
+  }
+
+  Future<void> _initDriverBehavior() async {
+    // Initialize driver behavior monitoring
+    if (!behaviorController.isInitialized.value) {
+      await Future.delayed(Duration(seconds: 1)); // Allow UI to render first
+      behaviorController.startMonitoring();
+    }
   }
 
   Future<void> _getCurrentLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation
+            accuracy: LocationAccuracy.bestForNavigation
         ),
       );
       controller.currentLocation.value = position;
@@ -54,52 +75,6 @@ class _MapsTabState extends State<MapsTab> {
             if (controller.currentLocation.value == null) {
               return Center(child: CircularProgressIndicator());
             }
-
-            // return MapboxMap(
-            //   accessToken: APIKeys.MAPBOXPUBLICTOKEN,
-            //   initialCameraPosition: CameraPosition(
-            //     target: LatLng(
-            //       controller.currentLocation.value!.latitude,
-            //       controller.currentLocation.value!.longitude,
-            //     ),
-            //     zoom: 14.0,
-            //   ),
-            //   onMapCreated: (MapboxMapController mapController) async {
-            //     controller.setMapController(mapController);
-            //
-            //     // Add custom markers
-            //     mapController.addImage(
-            //       "marker-start",
-            //       await _createMarkerImage(Colors.green, Icons.trip_origin),
-            //     );
-            //
-            //     mapController.addImage(
-            //       "marker-end",
-            //       await _createMarkerImage(Colors.red, Icons.place),
-            //     );
-            //
-            //     // Center on user's location once map is created
-            //     if (!_initialPositionEstablished && controller.currentLocation.value != null) {
-            //       mapController.animateCamera(
-            //         CameraUpdate.newLatLngZoom(
-            //           LatLng(
-            //             controller.currentLocation.value!.latitude,
-            //             controller.currentLocation.value!.longitude,
-            //           ),
-            //           15.0,
-            //         ),
-            //       );
-            //       _initialPositionEstablished = true;
-            //     }
-            //   },
-            //   onMapClick: _handleMapTap,
-            //   myLocationEnabled: true,
-            //   myLocationTrackingMode: MyLocationTrackingMode.Tracking,
-            //   compassEnabled: true,
-            //   onStyleLoadedCallback: () {
-            //     DevLogs.logSuccess('Map style loaded');
-            //   },
-            // );
 
             return FlutterMap(
               mapController: _mapController,
@@ -323,6 +298,19 @@ class _MapsTabState extends State<MapsTab> {
             }
             return SizedBox.shrink();
           }),
+
+          // Route Preview Panel
+          Obx(() {
+            if (controller.currentRoute.value == null) return SizedBox();
+            return _showingRoutePreview ? _buildRoutePreviewPanel() : SizedBox();
+          }),
+
+          // Driver Behavior Status
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 80,
+            right: 16,
+            child: Obx(() => _buildDriverBehaviorStatus()),
+          ),
         ],
       ),
     );
@@ -368,14 +356,14 @@ class _MapsTabState extends State<MapsTab> {
         if (controller.currentLocation.value != null) {
 
           await controller.getRoutePreview(
-            latlong2.LatLng(
-              controller.currentLocation.value!.latitude,
-              controller.currentLocation.value!.longitude,
-            ),
-            latlong2.LatLng(
-              coordinates.latitude,
-              coordinates.longitude,
-            )
+              latlong2.LatLng(
+                controller.currentLocation.value!.latitude,
+                controller.currentLocation.value!.longitude,
+              ),
+              latlong2.LatLng(
+                coordinates.latitude,
+                coordinates.longitude,
+              )
           ).then((value) async{
             await controller.getDirections(
               LatLng(
@@ -651,5 +639,389 @@ class _MapsTabState extends State<MapsTab> {
     return '${arrival.hour}:${arrival.minute.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildRoutePreviewPanel() {
+    final route = controller.currentRoute.value!;
+
+    // Format distance and duration
+    String distance = '';
+    if (route.distance < 1000) {
+      distance = '${route.distance.toInt()} m';
+    } else {
+      distance = '${(route.distance / 1000).toStringAsFixed(1)} km';
+    }
+
+    String duration = '';
+    if (route.duration < 60) {
+      duration = '${route.duration.toInt()} sec';
+    } else if (route.duration < 3600) {
+      duration = '${(route.duration / 60).toStringAsFixed(0)} min';
+    } else {
+      int hours = (route.duration / 3600).floor();
+      int minutes = ((route.duration % 3600) / 60).floor();
+      duration = '$hours h $minutes min';
+    }
+
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 80,
+      left: 16,
+      right: 16,
+      child: Card(
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                route.endAddress.isEmpty ? 'Destination' : route.endAddress,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.directions_car, size: 20, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text(
+                    distance,
+                    style: TextStyle(
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Icon(Icons.access_time, size: 20, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text(
+                    duration,
+                    style: TextStyle(
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  TextButton.icon(
+                    icon: Icon(Icons.favorite_border),
+                    label: Text('Save'),
+                    onPressed: () {
+                      _saveDestination();
+                    },
+                  ),
+                  ElevatedButton.icon(
+                    icon: Icon(Icons.navigation),
+                    label: Text('Start Navigation'),
+                    onPressed: () {
+                      _startNavigation();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: Icon(Icons.close),
+                    label: Text('Cancel'),
+                    onPressed: () {
+                      _cancelRoutePreview();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriverBehaviorStatus() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              behaviorController.isMonitoring.value
+                  ? Icons.sensors
+                  : Icons.sensors_off,
+              color: behaviorController.isMonitoring.value
+                  ? Colors.green
+                  : Colors.grey,
+              size: 20,
+            ),
+            SizedBox(width: 8),
+            Text(
+              behaviorController.isMonitoring.value
+                  ? 'Monitoring Active'
+                  : 'Monitoring Off',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: behaviorController.isMonitoring.value
+                    ? Colors.green
+                    : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onMapCreated(MapboxMapController controller) {
+    _mapboxMapController = controller;
+    this.controller.setMapController(controller);
+    setState(() {
+      _isInitialized = true;
+    });
+  }
+
+  void _onMapLongClick(Point<double> point, LatLng coordinates) async {
+    // Clear any existing markers and lines
+    if (_destinationMarker != null) {
+      _mapboxMapController.removeSymbol(_destinationMarker!);
+      _destinationMarker = null;
+    }
+
+    if (_routeLine != null) {
+      _mapboxMapController.removeLine(_routeLine!);
+      _routeLine = null;
+    }
+
+    // Add a new destination marker
+    _destinationMarker = await _mapboxMapController.addSymbol(
+      SymbolOptions(
+        geometry: coordinates,
+        iconImage: 'marker-15', // Use a default Mapbox icon
+        iconSize: 2.0,
+      ),
+    );
+
+    // Get the address for this location
+    SearchResult? location = await controller.mapboxService.reverseGeocode(coordinates);
+
+    if (location != null) {
+      // Get directions from current location to this point
+      await _getDirectionsToPoint(coordinates, location);
+    }
+  }
+
+  Future<void> _getDirectionsToPoint(LatLng destination, SearchResult location) async {
+    if (controller.currentLocation.value == null) return;
+
+    // Show loading indicator
+    Get.dialog(
+      Dialog(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Finding route...'),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: false,
+    );
+
+    try {
+      // Get current location
+      LatLng origin = LatLng(
+        controller.currentLocation.value!.latitude,
+        controller.currentLocation.value!.longitude,
+      );
+
+      // Get directions
+      await controller.getDirections(origin, destination);
+
+      // Show route preview
+      setState(() {
+        _showingRoutePreview = true;
+      });
+    } catch (e) {
+      print('Error getting directions: $e');
+    } finally {
+      // Close loading dialog
+      Get.back();
+    }
+  }
+
+  void _goToSearchScreen() async {
+    // Navigate to search screen
+    final result = await Get.to(() => SearchScreen());
+
+    // If a place was selected, get directions to it
+    if (result != null && result is SearchResult) {
+      LatLng destination = LatLng(result.latitude, result.longitude);
+
+      // Add a marker at the destination
+      if (_destinationMarker != null) {
+        _mapboxMapController.removeSymbol(_destinationMarker!);
+      }
+
+      _destinationMarker = await _mapboxMapController.addSymbol(
+        SymbolOptions(
+          geometry: destination,
+          iconImage: 'marker-15',
+          iconSize: 2.0,
+        ),
+      );
+
+      // Get directions
+      await _getDirectionsToPoint(destination, result);
+    }
+  }
+
+  void _goToSavedPlacesScreen() async {
+    // Navigate to saved places screen
+    final result = await Get.to(() => SavedPlacesScreen());
+
+    // If a place was selected, get directions to it
+    if (result != null && result is SearchResult) {
+      LatLng destination = LatLng(result.latitude, result.longitude);
+
+      // Add a marker at the destination
+      if (_destinationMarker != null) {
+        _mapboxMapController.removeSymbol(_destinationMarker!);
+      }
+
+      _destinationMarker = await _mapboxMapController.addSymbol(
+        SymbolOptions(
+          geometry: destination,
+          iconImage: 'marker-15',
+          iconSize: 2.0,
+        ),
+      );
+
+      // Get directions
+      await _getDirectionsToPoint(destination, result);
+    }
+  }
+
+  void _centerOnCurrentLocation() {
+    if (controller.currentLocation.value != null) {
+      _mapboxMapController.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(
+            controller.currentLocation.value!.latitude,
+            controller.currentLocation.value!.longitude,
+          ),
+          15.0,
+        ),
+      );
+    }
+  }
+
+  void _saveDestination() {
+    if (controller.currentRoute.value == null) return;
+
+    // Show a dialog to get the name for this place
+    Get.dialog(
+      AlertDialog(
+        title: Text('Save Place'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Name',
+                hintText: 'Home, Work, etc.',
+              ),
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  _addToFavorites(value);
+                  Get.back();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: Text('Cancel'),
+            onPressed: () => Get.back(),
+          ),
+          TextButton(
+            child: Text('Save'),
+            onPressed: () {
+              // Get the text from the field and save
+              final TextEditingController controller = TextEditingController();
+              if (controller.text.isNotEmpty) {
+                _addToFavorites(controller.text);
+              }
+              Get.back();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addToFavorites(String name) {
+    if (controller.currentRoute.value == null) return;
+
+    final route = controller.currentRoute.value!;
+    controller.addToFavorites(
+      route.endLatitude,
+      route.endLongitude,
+      name,
+      route.endAddress,
+    );
+  }
+
+  void _startNavigation() {
+    if (controller.currentRoute.value == null) return;
+
+    // Make sure driver behavior monitoring is active
+    if (!behaviorController.isMonitoring.value) {
+      behaviorController.startMonitoring(
+        isNavigationMode: true,
+        routeId: controller.currentRoute.value!.id,
+      );
+    }
+
+    // Start navigation
+    controller.startNavigation();
+
+    // Navigate to navigation screen
+    Get.to(() => NavigationScreen());
+  }
+
+  void _cancelRoutePreview() {
+    setState(() {
+      _showingRoutePreview = false;
+    });
+
+    // Clear markers and route
+    if (_destinationMarker != null) {
+      _mapboxMapController.removeSymbol(_destinationMarker!);
+      _destinationMarker = null;
+    }
+
+    if (_routeLine != null) {
+      _mapboxMapController.removeLine(_routeLine!);
+      _routeLine = null;
+    }
+
+    // Clear route in controller
+    controller.currentRoute.value = null;
+  }
 }
 

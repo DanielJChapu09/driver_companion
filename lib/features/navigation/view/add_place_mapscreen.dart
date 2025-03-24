@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:mymaptest/config/confidential/apikeys.dart';
 import '../controller/navigation_controller.dart';
 import '../model/search_result_model.dart';
 
@@ -34,7 +35,7 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
             }
 
             return MapboxMap(
-              accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN', // Replace with your Mapbox token
+              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   controller.currentLocation.value!.latitude!,

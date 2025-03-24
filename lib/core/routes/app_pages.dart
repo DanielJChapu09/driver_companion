@@ -12,9 +12,11 @@ import '../../features/authentication/views/resend_reset_email_screen.dart';
 import '../../features/authentication/views/sign_up_screen.dart';
 import '../../features/community/view/community_map_screen.dart';
 import '../../features/community/view/create_notification_screen.dart';
+import '../../features/driver_behaviour/view/driver_behavior_screen.dart';
 import '../../features/main/pages/mainscreen.dart';
 import '../../features/navigation/view/navigation_screen.dart';
 import '../../features/navigation/view/search_screen.dart';
+import '../../features/service_locator/views/service_locator_screen.dart';
 import '../../pages/community.dart';
 import '../../pages/driver_ai.dart';
 import '../../pages/driver_behavior.dart';
@@ -78,7 +80,8 @@ class AppPages {
 
     GetPage(
         name: Routes.serviceLocator,
-        page: ()=> ServiceLocator(),
+        // page: ()=> ServiceLocator(),
+        page: ()=> ServiceLocatorScreen(),
     ),
 
     GetPage(
@@ -98,7 +101,7 @@ class AppPages {
 
     GetPage(
         name: Routes.driverBehavior,
-        page: ()=> DriverBehavior(),
+        page: ()=> DriverBehaviorScreen(),
     ),
 
 
