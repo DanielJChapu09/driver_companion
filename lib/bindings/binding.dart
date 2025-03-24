@@ -36,10 +36,20 @@ class InitialBinding extends Bindings {
           permanent: true
       );
 
-      Get.lazyPut<CommunityController>(() => CommunityController(),);
-      Get.lazyPut<NavigationController>(() => NavigationController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),);
-      Get.lazyPut<ServiceLocatorController>(() => ServiceLocatorController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),);
-      // Get.lazyPut<DriverBehaviorController>(() => DriverBehaviorController(),);
+      Get.put(
+          CommunityController(),
+          permanent: true
+      );
+
+      Get.put(
+          NavigationController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),
+          permanent: true
+      );
+
+      Get.put(
+          ServiceLocatorController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),
+          permanent: true
+      );
 
 
     } catch (error) {
