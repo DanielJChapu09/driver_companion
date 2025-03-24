@@ -212,10 +212,10 @@ class NavigationController extends GetxController {
     try {
       // Get primary route
       List<latlong2.LatLng>? route = await mapboxService.getPreviewRoute(
-        wayPoints: [
-          origin,
-          destination,
-        ]
+          wayPoints: [
+            origin,
+            destination,
+          ]
       );
 
       if (route.isNotEmpty) {
@@ -544,3 +544,4 @@ class NavigationController extends GetxController {
     }
   }
 }
+

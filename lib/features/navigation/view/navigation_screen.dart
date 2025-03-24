@@ -130,9 +130,9 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
                   // Set traffic visibility
                   try {
-                   // mapController.setLayerVisibility("traffic", _showTraffic);
+                    // mapController.setLayerVisibility("traffic", _showTraffic);
                   } catch (e) {
-                    print('Error setting traffic visibility: $e');
+                    DevLogs.logError('Error setting traffic visibility: $e');
                   }
 
                   // Draw route if we have one
@@ -305,7 +305,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                             ),
                             SizedBox(height: 2),
                             Text(
-                              '${_formatDistance(nextStep.distance)}',
+                              _formatDistance(nextStep.distance),
                               style: TextStyle(
                                 fontSize: 12,
                                 color: _darkMode ? Colors.white54 : Colors.black38,
@@ -711,7 +711,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   });
                   if (_mapboxController != null && _mapInitialized) {
                     try {
-                     // _mapboxController!.setLayerVisibility("traffic", _showTraffic);
+                      // _mapboxController!.setLayerVisibility("traffic", _showTraffic);
                     } catch (e) {
                       DevLogs.logError('Error toggling traffic layer: $e');
                     }
@@ -857,3 +857,4 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
   }
 }
+

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:mymaptest/config/confidential/apikeys.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'notification_details_screen.dart';
@@ -50,7 +51,7 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
         return Stack(
           children: [
             MapboxMap(
-              accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN', // Replace with your Mapbox token
+              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   controller.currentLocation.value!.latitude,

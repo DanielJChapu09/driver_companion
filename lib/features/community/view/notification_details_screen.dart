@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
+import '../../../config/confidential/apikeys.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 
@@ -59,7 +60,7 @@ class NotificationDetailScreen extends StatelessWidget {
             Container(
               height: 200,
               child: MapboxMap(
-                accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN',
+                accessToken: APIKeys.MAPBOXPUBLICTOKEN,
                 initialCameraPosition: CameraPosition(
                   target: LatLng(notification.latitude, notification.longitude),
                   zoom: 14.0,
