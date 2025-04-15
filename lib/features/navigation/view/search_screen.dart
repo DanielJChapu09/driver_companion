@@ -226,8 +226,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                     if (controller.currentLocation.value != null) {
                       controller.getDirections(
                         LatLng(
-                          controller.currentLocation.value!.latitude!,
-                          controller.currentLocation.value!.longitude!,
+                          controller.currentLocation.value!.latitude,
+                          controller.currentLocation.value!.longitude,
                         ),
                         LatLng(place.latitude, place.longitude),
                       );
