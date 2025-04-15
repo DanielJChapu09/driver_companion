@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as latlong2;
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import '../controller/service_locator_controller.dart';
 import '../model/service_location_model.dart';
@@ -20,18 +20,19 @@ class ServiceLocatorScreen extends StatefulWidget {
 
 class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
   final ServiceLocatorController _controller = Get.find<ServiceLocatorController>();
-  MapboxMapController? _mapController;
+  final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, Uint8List> _markerIcons = {};
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _createMarkerImages();
   }
 
   @override
   void dispose() {
-    _mapController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -40,20 +41,18 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
   Future<void> _getCurrentLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
-          locationSettings: LocationSettings(
+        locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.high
-          ),
+        ),
       );
 
       _controller.updateCurrentLocation(position);
 
       // Move map to current location
       if (_mapController != null) {
-        _mapController!.animateCamera(
-            CameraUpdate.newLatLngZoom(
-                LatLng(position.latitude, position.longitude),
-                14.0
-            )
+        _mapController.move(
+            latlong2.LatLng(position.latitude, position.longitude),
+            14.0
         );
       }
     } catch (e) {
@@ -61,20 +60,98 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     }
   }
 
+  // Create marker images for different service types
+  Future<void> _createMarkerImages() async {
+    final serviceTypes = {
+      'gas-station': Colors.red,
+      'car-repair': Colors.blue,
+      'car-wash': Colors.cyan,
+      'parking': Colors.indigo,
+      'restaurant': Colors.orange,
+      'lodging': Colors.purple,
+      'hospital': Colors.green,
+      'police': Colors.blue,
+      'charging': Colors.teal,
+      'rest-area': Colors.brown,
+      'atm': Colors.green,
+      'shop': Colors.amber,
+      'marker': Colors.red,
+    };
+
+    final iconMap = {
+      'gas-station': Icons.local_gas_station,
+      'car-repair': Icons.build,
+      'car-wash': Icons.local_car_wash,
+      'parking': Icons.local_parking,
+      'restaurant': Icons.restaurant,
+      'lodging': Icons.hotel,
+      'hospital': Icons.local_hospital,
+      'police': Icons.local_police,
+      'charging': Icons.electrical_services,
+      'rest-area': Icons.airline_seat_recline_normal,
+      'atm': Icons.atm,
+      'shop': Icons.shopping_cart,
+      'marker': Icons.place,
+    };
+
+    for (var entry in serviceTypes.entries) {
+      _markerIcons[entry.key] = await _createMarkerImage(
+          entry.value,
+          iconMap[entry.key] ?? Icons.place
+      );
+    }
+  }
+
+  // Create a marker image with an icon
+  Future<Uint8List> _createMarkerImage(Color color, IconData icon) async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final size = Size(48, 48);
+    final paint = Paint()..color = color;
+
+    // Draw marker background
+    canvas.drawCircle(const Offset(24, 24), 16, paint);
+
+    // Draw icon
+    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(icon.codePoint),
+      style: TextStyle(
+        fontSize: 24,
+        fontFamily: icon.fontFamily,
+        color: Colors.white,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        24 - textPainter.width / 2,
+        24 - textPainter.height / 2,
+      ),
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.width.toInt(), size.height.toInt());
+    final pngBytes = await img.toByteData(format: ImageByteFormat.png);
+
+    return pngBytes!.buffer.asUint8List();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Service Locator'),
+        title: const Text('Service Locator'),
         actions: [
           IconButton(
-            icon: Icon(Icons.favorite),
+            icon: const Icon(Icons.favorite),
             onPressed: () {
               _showFavoritesBottomSheet();
             },
           ),
           IconButton(
-            icon: Icon(Icons.history),
+            icon: const Icon(Icons.history),
             onPressed: () {
               _showRecentBottomSheet();
             },
@@ -90,12 +167,12 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: 'Search for services...',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 suffixIcon: IconButton(
-                  icon: Icon(Icons.clear),
+                  icon: const Icon(Icons.clear),
                   onPressed: () {
                     _searchController.clear();
                     _controller.searchResults.clear();
@@ -115,7 +192,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
           // Category chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
               children: ServiceLocatorService.serviceCategories.entries.map((entry) {
                 return Padding(
@@ -146,29 +223,77 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                   final currentLocation = _controller.currentLocation.value;
 
                   if (currentLocation == null) {
-                    return Center(child: CircularProgressIndicator());
+                    return const Center(child: CircularProgressIndicator());
                   }
 
-                  return MapboxMap(
-                    accessToken: APIKeys.MAPBOXPUBLICTOKEN,
-                    initialCameraPosition: CameraPosition(
-                      target: LatLng(currentLocation.latitude, currentLocation.longitude),
-                      zoom: 14.0,
+                  return FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: latlong2.LatLng(currentLocation.latitude, currentLocation.longitude),
+                      initialZoom: 14.0,
+                      onTap: (tapPosition, point) {
+                        // Hide any open bottom sheets when map is clicked
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                      },
                     ),
-                    onMapCreated: (MapboxMapController controller) {
-                      _mapController = controller;
-                      _controller.setMapController(controller);
-                    },
-                    onStyleLoadedCallback: () {
-                      // Add custom markers for different service types
-                      _addCustomMarkerImages();
-                    },
-                    myLocationEnabled: true,
-                    myLocationTrackingMode: MyLocationTrackingMode.Tracking,
-                    onMapClick: (point, coordinates) {
-                      // Hide any open bottom sheets when map is clicked
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    },
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${APIKeys.MAPBOXPUBLICTOKEN}',
+                        additionalOptions: {
+                          'accessToken': APIKeys.MAPBOXPUBLICTOKEN
+                        },
+                      ),
+
+                      // Current location marker
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            width: 20,
+                            height: 20,
+                            point: latlong2.LatLng(currentLocation.latitude, currentLocation.longitude),
+                            child: Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Center(
+                                child: Stack(
+                                  children: [
+                                    Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue,
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.blue.withOpacity(0.5),
+                                            spreadRadius: 2,
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ],
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 1,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Service location markers
+                      MarkerLayer(
+                        markers: _buildServiceMarkers(),
+                      ),
+                    ],
                   );
                 }),
 
@@ -176,13 +301,13 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                 Obx(() {
                   if (_controller.isLoading.value) {
                     return Container(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      child: Center(
+                      color: Colors.black.withOpacity(0.3),
+                      child: const Center(
                         child: CircularProgressIndicator(),
                       ),
                     );
                   } else {
-                    return SizedBox.shrink();
+                    return const SizedBox.shrink();
                   }
                 }),
 
@@ -199,9 +324,9 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                           color: Colors.white,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
+                              color: Colors.black.withOpacity(0.1),
                               blurRadius: 5,
-                              offset: Offset(0, 3),
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
@@ -224,7 +349,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                       ),
                     );
                   } else {
-                    return SizedBox.shrink();
+                    return const SizedBox.shrink();
                   }
                 }),
 
@@ -236,15 +361,15 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                       left: 16,
                       right: 16,
                       child: Container(
-                        padding: EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(8),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
+                              color: Colors.black.withOpacity(0.1),
                               blurRadius: 5,
-                              offset: Offset(0, 3),
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
@@ -253,7 +378,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                           children: [
                             Text(
                               '${_controller.nearbyServices.length} ${ServiceLocatorService.serviceCategories[_controller.selectedCategory.value] ?? ""} nearby',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -261,14 +386,14 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                               onPressed: () {
                                 _showNearbyServicesBottomSheet();
                               },
-                              child: Text('View List'),
+                              child: const Text('View List'),
                             ),
                           ],
                         ),
                       ),
                     );
                   } else {
-                    return SizedBox.shrink();
+                    return const SizedBox.shrink();
                   }
                 }),
               ],
@@ -278,117 +403,104 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _getCurrentLocation,
-        child: Icon(Icons.my_location),
+        child: const Icon(Icons.my_location),
       ),
     );
   }
 
-  // Add custom marker images for different service types
-  void _addCustomMarkerImages() async{
-    if (_mapController == null) return;
+  // Build service markers for the map
+  List<Marker> _buildServiceMarkers() {
+    List<Marker> markers = [];
 
-    // Add marker images for different service types
-    // In a real app, you would use actual image assets
-    _mapController!.addImage(
-      'gas-station',
-      await _createMarkerImage(Colors.red, Icons.local_gas_station),
-    );
+    // Add markers for nearby services
+    for (var service in _controller.nearbyServices) {
+      markers.add(
+        Marker(
+          width: 40,
+          height: 40,
+          point: latlong2.LatLng(service.latitude, service.longitude),
+          child: GestureDetector(
+            onTap: () => _showServiceDetails(service),
+            child: _getMarkerWidget(service.category),
+          ),
+        ),
+      );
+    }
 
-    _mapController!.addImage(
-      'car-repair',
-      await _createMarkerImage(Colors.blue, Icons.build),
-    );
-
-    _mapController!.addImage(
-      'car-wash',
-      await _createMarkerImage(Colors.cyan, Icons.local_car_wash),
-    );
-
-    _mapController!.addImage(
-      'parking',
-      await _createMarkerImage(Colors.indigo, Icons.local_parking),
-    );
-
-    _mapController!.addImage(
-      'restaurant',
-      await _createMarkerImage(Colors.orange, Icons.restaurant),
-    );
-
-    _mapController!.addImage(
-      'lodging',
-      await _createMarkerImage(Colors.purple, Icons.hotel),
-    );
-
-    _mapController!.addImage(
-      'hospital',
-      await _createMarkerImage(Colors.green, Icons.local_hospital),
-    );
-
-    _mapController!.addImage(
-      'police',
-      await _createMarkerImage(Colors.blue, Icons.local_police),
-    );
-
-    _mapController!.addImage(
-      'charging',
-      await _createMarkerImage(Colors.teal, Icons.electrical_services),
-    );
-
-    _mapController!.addImage(
-      'rest-area',
-      await _createMarkerImage(Colors.brown, Icons.airline_seat_recline_normal),
-    );
-
-    _mapController!.addImage(
-      'atm',
-      await _createMarkerImage(Colors.green, Icons.atm),
-    );
-
-    _mapController!.addImage(
-      'shop',
-      await _createMarkerImage(Colors.amber, Icons.shopping_cart),
-    );
-
-    _mapController!.addImage(
-      'marker',
-      await _createMarkerImage(Colors.red, Icons.place),
-    );
+    return markers;
   }
 
-  // Create a marker image with an icon
-  Future<Uint8List> _createMarkerImage(Color color, IconData icon) async {
-    final recorder = PictureRecorder();
-    final canvas = Canvas(recorder);
-    final size = Size(48, 48);
-    final paint = Paint()..color = color;
+  // Get marker widget based on service category
+  Widget _getMarkerWidget(String category) {
+    IconData iconData;
+    Color color;
 
-    // Draw marker background
-    canvas.drawCircle(Offset(24, 24), 16, paint);
+    switch (category) {
+      case 'gas-station':
+        iconData = Icons.local_gas_station;
+        color = Colors.red;
+        break;
+      case 'car-repair':
+        iconData = Icons.build;
+        color = Colors.blue;
+        break;
+      case 'car-wash':
+        iconData = Icons.local_car_wash;
+        color = Colors.cyan;
+        break;
+      case 'parking':
+        iconData = Icons.local_parking;
+        color = Colors.indigo;
+        break;
+      case 'restaurant':
+        iconData = Icons.restaurant;
+        color = Colors.orange;
+        break;
+      case 'lodging':
+        iconData = Icons.hotel;
+        color = Colors.purple;
+        break;
+      case 'hospital':
+        iconData = Icons.local_hospital;
+        color = Colors.green;
+        break;
+      case 'police':
+        iconData = Icons.local_police;
+        color = Colors.blue;
+        break;
+      case 'charging':
+        iconData = Icons.electrical_services;
+        color = Colors.teal;
+        break;
+      case 'rest-area':
+        iconData = Icons.airline_seat_recline_normal;
+        color = Colors.brown;
+        break;
+      case 'atm':
+        iconData = Icons.atm;
+        color = Colors.green;
+        break;
+      case 'shop':
+        iconData = Icons.shopping_cart;
+        color = Colors.amber;
+        break;
+      default:
+        iconData = Icons.place;
+        color = Colors.red;
+    }
 
-    // Draw icon
-    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
-    textPainter.text = TextSpan(
-      text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(
-        fontSize: 24,
-        fontFamily: icon.fontFamily,
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Icon(
+        iconData,
         color: Colors.white,
+        size: 20,
       ),
     );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        24 - textPainter.width / 2,
-        24 - textPainter.height / 2,
-      ),
-    );
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.width.toInt(), size.height.toInt());
-    final pngBytes = await img.toByteData(format: ImageByteFormat.png);
-
-    return pngBytes!.buffer.asUint8List();
   }
 
   // Show service details
@@ -400,14 +512,10 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     Get.to(() => ServiceDetailScreen(service: service));
 
     // Move map to service location
-    if (_mapController != null) {
-      _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(
-              LatLng(service.latitude, service.longitude),
-              16.0
-          )
-      );
-    }
+    _mapController.move(
+        latlong2.LatLng(service.latitude, service.longitude),
+        16.0
+    );
   }
 
   // Show nearby services bottom sheet
@@ -415,7 +523,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
@@ -435,7 +543,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
                       'Nearby $categoryName',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -448,6 +556,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                       itemBuilder: (context, index) {
                         final service = services[index];
                         return ListTile(
+                          leading: _getMarkerWidget(service.category),
                           title: Text(service.name),
                           subtitle: Text(service.address),
                           trailing: Column(
@@ -481,7 +590,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
@@ -495,7 +604,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
               final services = _controller.favoriteServices;
 
               if (services.isEmpty) {
-                return Center(
+                return const Center(
                   child: Text('No favorite services yet'),
                 );
               }
@@ -506,7 +615,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
                       'Favorite Services',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -519,6 +628,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                       itemBuilder: (context, index) {
                         final service = services[index];
                         return ListTile(
+                          leading: _getMarkerWidget(service.category),
                           title: Text(service.name),
                           subtitle: Text(service.address),
                           trailing: Column(
@@ -552,7 +662,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
@@ -566,7 +676,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
               final services = _controller.recentServices;
 
               if (services.isEmpty) {
-                return Center(
+                return const Center(
                   child: Text('No recent services'),
                 );
               }
@@ -577,7 +687,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
                       'Recent Services',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -590,6 +700,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                       itemBuilder: (context, index) {
                         final service = services[index];
                         return ListTile(
+                          leading: _getMarkerWidget(service.category),
                           title: Text(service.name),
                           subtitle: Text(service.address),
                           trailing: Column(
@@ -616,9 +727,9 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
                         _controller.clearRecentServices();
                         Navigator.pop(context);
                       },
-                      child: Text('Clear Recent Services'),
+                      child: const Text('Clear Recent Services'),
                       style: ElevatedButton.styleFrom(
-                        minimumSize: Size(double.infinity, 50),
+                        minimumSize: const Size(double.infinity, 50),
                       ),
                     ),
                   ),
@@ -631,4 +742,3 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     );
   }
 }
-
