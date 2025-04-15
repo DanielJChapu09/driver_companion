@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
-import '../../../core/utils/logs.dart';
+import 'package:mymaptest/core/utils/logs.dart';
 import '../controller/navigation_controller.dart';
 import '../model/route_model.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import './location_marker_painter.dart';
+import 'dart:math' as math;
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -25,6 +29,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   bool _followMode = true;
   MapboxMapController? _mapboxController;
   bool _mapInitialized = false;
+  Timer? _locationUpdateTimer;
 
   @override
   void initState() {
@@ -40,6 +45,27 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     ever(controller.currentInstruction, (instruction) {
       if (controller.voiceGuidanceEnabled.value && instruction.isNotEmpty) {
         _speakInstruction(instruction);
+      }
+    });
+
+    // Start location updates
+    _startLocationUpdates();
+  }
+
+  void _startLocationUpdates() {
+    _locationUpdateTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_mapboxController != null && controller.currentLocation.value != null) {
+        if (_followMode) {
+          _mapboxController!.animateCamera(
+            CameraUpdate.newLatLngZoom(
+              LatLng(
+                controller.currentLocation.value!.latitude,
+                controller.currentLocation.value!.longitude,
+              ),
+              16.0,
+            ),
+          );
+        }
       }
     });
   }
@@ -60,6 +86,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     flutterTts.stop();
+    _locationUpdateTimer?.cancel();
     if (_mapboxController != null) {
       _mapboxController!.dispose();
     }
@@ -128,24 +155,31 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   // Set map style
                   _updateMapStyle();
 
-                  // Set traffic visibility
-                  try {
-                    // mapController.setLayerVisibility("traffic", _showTraffic);
-                  } catch (e) {
-                    DevLogs.logError('Error setting traffic visibility: $e');
-                  }
-
                   // Draw route if we have one
                   if (controller.currentRoute.value != null) {
                     _drawRouteOnMap(mapController, controller.currentRoute.value!);
                   }
                 });
               },
-              myLocationEnabled: true,
-              myLocationTrackingMode: _followMode
-                  ? MyLocationTrackingMode.TrackingGPS
-                  : MyLocationTrackingMode.None,
+              // Disable the built-in location tracking that's causing the crash
+              myLocationEnabled: false,
               compassEnabled: true,
+            );
+          }),
+
+          // Add this inside the Stack in the build method, right after the MapboxMap
+          Obx(() {
+            if (controller.currentLocation.value == null) return SizedBox.shrink();
+
+            return Positioned(
+              child: CustomPaint(
+                painter: LocationMarkerPainter(
+                  bearing: controller.currentLocation.value!.heading.toDouble(),
+                ),
+                size: Size(30, 30),
+              ),
+              left: MediaQuery.of(context).size.width / 2 - 15,
+              top: MediaQuery.of(context).size.height / 2 - 15,
             );
           }),
 
@@ -857,4 +891,3 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
   }
 }
-
