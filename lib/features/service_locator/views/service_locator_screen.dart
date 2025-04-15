@@ -11,6 +11,7 @@ import '../model/service_location_model.dart';
 import '../service/service_locator_service.dart';
 import 'service_detail_screen.dart';
 
+
 class ServiceLocatorScreen extends StatefulWidget {
   const ServiceLocatorScreen({super.key});
 
