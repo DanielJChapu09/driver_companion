@@ -6,6 +6,7 @@ import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
 import 'package:latlong2/latlong.dart' as latlong2;
+import 'dart:async';
 import '../model/place_model.dart';
 import '../model/route_model.dart';
 import '../model/search_result_model.dart';
@@ -237,8 +238,23 @@ class NavigationController extends GetxController {
     }
   }
 
+  // Add this method to the NavigationController class to handle custom location tracking
 
-  // Start navigation
+  void updateMapCameraWithLocation() {
+    if (mapController.value != null && currentLocation.value != null && isNavigating.value) {
+      mapController.value!.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(
+            currentLocation.value!.latitude,
+            currentLocation.value!.longitude,
+          ),
+          16.0,
+        ),
+      );
+    }
+  }
+
+  // Modify the startNavigation method to include camera updates
   Future<void> startNavigation() async {
     if (currentRoute.value == null) return;
 
@@ -247,6 +263,15 @@ class NavigationController extends GetxController {
 
       if (started) {
         isNavigating.value = true;
+
+        // Set up periodic camera updates
+        Timer.periodic(Duration(seconds: 2), (timer) {
+          if (!isNavigating.value) {
+            timer.cancel();
+            return;
+          }
+          updateMapCameraWithLocation();
+        });
 
         // Add destination to recent places
         if (currentRoute.value != null) {
@@ -544,4 +569,3 @@ class NavigationController extends GetxController {
     }
   }
 }
-

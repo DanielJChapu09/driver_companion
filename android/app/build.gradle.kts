@@ -13,7 +13,6 @@ android {
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
-
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
@@ -42,6 +41,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // Add this configuration block to force consistent Google Play Services versions
+    configurations.all {
+        resolutionStrategy.force("com.google.android.gms:play-services-location:21.0.1")
+        resolutionStrategy.force("com.google.android.gms:play-services-maps:18.2.0")
+        resolutionStrategy.force("com.google.android.gms:play-services-base:18.2.0")
+    }
 }
 
 flutter {
@@ -50,5 +56,8 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Add explicit dependencies for Google Play Services
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.android.gms:play-services-base:18.2.0")
 }
-
