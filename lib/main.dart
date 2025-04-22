@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'CUT Nexus',
+      title: 'Smart Driver Companion',
       defaultTransition: Transition.cupertino,
       theme: Palette.lightTheme,
       darkTheme: Palette.darkTheme,

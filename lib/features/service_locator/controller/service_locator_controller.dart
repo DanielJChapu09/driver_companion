@@ -28,7 +28,7 @@ class ServiceLocatorController extends GetxController {
   Rx<MapboxMapController?> mapController = Rx<MapboxMapController?>(null);
 
   ServiceLocatorController({required String mapboxAccessToken})
-      : _serviceLocatorService = ServiceLocatorService(accessToken: mapboxAccessToken);
+      : _serviceLocatorService = ServiceLocatorService(apiKey: mapboxAccessToken);
 
   @override
   void onInit() {

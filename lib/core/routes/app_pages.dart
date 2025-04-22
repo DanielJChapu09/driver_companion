@@ -17,10 +17,7 @@ import '../../features/main/pages/mainscreen.dart';
 import '../../features/navigation/view/navigation_screen.dart';
 import '../../features/navigation/view/search_screen.dart';
 import '../../features/service_locator/views/service_locator_screen.dart';
-import '../../pages/community.dart';
 import '../../pages/driver_ai.dart';
-import '../../pages/driver_behavior.dart';
-import '../../pages/service_locator.dart';
 import '../../pages/trends.dart';
 part 'app_routes.dart';
 
