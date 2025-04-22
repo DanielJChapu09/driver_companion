@@ -1,15 +1,19 @@
 import 'dart:convert';
-import 'dart:math';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/core/utils/logs.dart';
+import 'package:mymaptest/features/service_locator/service/service_locator_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../model/service_location_model.dart';
+import 'service_repository_interface.dart';
+import 'location_service.dart';
 
-class ServiceLocatorService {
+/// Implementation of the service repository interface
+class ServiceRepository implements IServiceRepository {
   final String _apiKey;
   final Uuid _uuid = Uuid();
+  final ILocationService _locationService;
 
   // Cache keys
   static const String _recentServicesKey = 'recent_services';
@@ -17,7 +21,7 @@ class ServiceLocatorService {
   static const int _cacheDurationHours = 24; // Cache duration in hours
 
   // Service categories
-  static const Map<String, String> serviceCategories = {
+  static const Map<String, String> _serviceCategories = {
     'gas_station': 'Gas Station',
     'mechanic': 'Mechanic',
     'car_wash': 'Car Wash',
@@ -48,17 +52,31 @@ class ServiceLocatorService {
     'convenience_store': ['convenience_store', 'supermarket'],
   };
 
-  ServiceLocatorService({required String apiKey}) : _apiKey = apiKey;
+  ServiceRepository({
+    required String apiKey,
+    ILocationService? locationService,
+  }) : _apiKey = apiKey,
+        _locationService = locationService ?? LocationService();
 
-  // Search for services by category
+  @override
+  Map<String, String> getServiceCategories() {
+    return _serviceCategories;
+  }
+
+  @override
   Future<List<ServiceLocation>> searchServicesByCategory(
       String category,
-      LatLng currentLocation,
-      {double radiusKm = 10.0}
-      ) async {
+      LatLng currentLocation, {
+        double radiusKm = 10.0,
+      }) async {
     try {
       // Check cache first
-      final cachedServices = await _getCachedServicesByCategory(category, currentLocation, radiusKm);
+      final cachedServices = await _getCachedServicesByCategory(
+          category,
+          currentLocation,
+          radiusKm
+      );
+
       if (cachedServices.isNotEmpty) {
         return cachedServices;
       }
@@ -85,7 +103,6 @@ class ServiceLocatorService {
         }
 
         final results = data['results'] as List? ?? [];
-
         List<ServiceLocation> services = [];
 
         for (var place in results) {
@@ -103,7 +120,7 @@ class ServiceLocatorService {
           bool isOpen = place['opening_hours']?['open_now'] ?? true;
 
           // Calculate distance (straight line)
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               lat,
@@ -158,12 +175,12 @@ class ServiceLocatorService {
     return amenities;
   }
 
-  // Search for services by name or keyword
+  @override
   Future<List<ServiceLocation>> searchServicesByKeyword(
       String keyword,
-      LatLng currentLocation,
-      {double radiusKm = 10.0}
-      ) async {
+      LatLng currentLocation, {
+        double radiusKm = 10.0,
+      }) async {
     try {
       // Build the URL for Google Places text search
       String url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
@@ -183,7 +200,6 @@ class ServiceLocatorService {
         }
 
         final results = data['results'] as List? ?? [];
-
         List<ServiceLocation> services = [];
 
         for (var place in results) {
@@ -200,7 +216,7 @@ class ServiceLocatorService {
           String category = _determineCategoryFromPlace(place);
 
           // Calculate distance (straight line)
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               lat,
@@ -237,8 +253,11 @@ class ServiceLocatorService {
     }
   }
 
-  // Get details for a specific service
-  Future<ServiceLocation?> getServiceDetails(String serviceId, LatLng currentLocation) async {
+  @override
+  Future<ServiceLocation?> getServiceDetails(
+      String serviceId,
+      LatLng currentLocation,
+      ) async {
     try {
       // Check if we have it in cache
       final prefs = await SharedPreferences.getInstance();
@@ -252,7 +271,7 @@ class ServiceLocatorService {
           ServiceLocation service = ServiceLocation.fromJson(recentServices[serviceIndex]);
 
           // Update distance and duration
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               service.latitude,
@@ -271,7 +290,7 @@ class ServiceLocatorService {
           ServiceLocation service = ServiceLocation.fromJson(favoriteServices[serviceIndex]);
 
           // Update distance and duration
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               service.latitude,
@@ -305,8 +324,8 @@ class ServiceLocatorService {
         // Extract place details
         String name = result['name'] ?? '';
         String address = result['formatted_address'] ?? '';
-        String phoneNumber = result['formatted_phone_number'];
-        String website = result['website'];
+        String phoneNumber = result['formatted_phone_number'] ?? '';
+        String website = result['website'] ?? '';
         double? rating = result['rating']?.toDouble();
         bool isOpen = result['opening_hours']?['open_now'] ?? true;
 
@@ -314,7 +333,7 @@ class ServiceLocatorService {
         String category = _determineCategoryFromPlace(result);
 
         // Calculate distance and duration
-        double distance = _calculateDistance(
+        double distance = _locationService.calculateDistanceCoordinates(
             currentLocation.latitude,
             currentLocation.longitude,
             location['lat'],
@@ -348,7 +367,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Add a service to favorites
+  @override
   Future<bool> addServiceToFavorites(ServiceLocation service) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -377,7 +396,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Remove a service from favorites
+  @override
   Future<bool> removeServiceFromFavorites(String serviceId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -398,7 +417,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Get all favorite services
+  @override
   Future<List<ServiceLocation>> getFavoriteServices(LatLng currentLocation) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -415,7 +434,7 @@ class ServiceLocatorService {
         ServiceLocation serviceLocation = ServiceLocation.fromJson(service);
 
         // Update distance and duration
-        double distance = _calculateDistance(
+        double distance = _locationService.calculateDistanceCoordinates(
             currentLocation.latitude,
             currentLocation.longitude,
             serviceLocation.latitude,
@@ -423,7 +442,11 @@ class ServiceLocatorService {
         );
         double duration = (distance / 50) * 60; // Convert to minutes
 
-        services.add(serviceLocation.copyWith(distance: distance, duration: duration));
+        services.add(serviceLocation.copyWith(
+          distance: distance,
+          duration: duration,
+          isFavorite: true,
+        ));
       }
 
       // Sort by distance
@@ -436,7 +459,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Add a service to recent
+  @override
   Future<bool> addServiceToRecent(ServiceLocation service) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -466,7 +489,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Get recent services
+  @override
   Future<List<ServiceLocation>> getRecentServices(LatLng currentLocation) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -483,7 +506,7 @@ class ServiceLocatorService {
         ServiceLocation serviceLocation = ServiceLocation.fromJson(service);
 
         // Update distance and duration
-        double distance = _calculateDistance(
+        double distance = _locationService.calculateDistanceCoordinates(
             currentLocation.latitude,
             currentLocation.longitude,
             serviceLocation.latitude,
@@ -501,7 +524,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Clear recent services
+  @override
   Future<bool> clearRecentServices() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -513,12 +536,12 @@ class ServiceLocatorService {
     }
   }
 
-  // Get services along a route
+  @override
   Future<List<ServiceLocation>> getServicesAlongRoute(
       String category,
-      List<LatLng> routePoints,
-      {double bufferDistanceKm = 1.0}
-      ) async {
+      List<LatLng> routePoints, {
+        double bufferDistanceKm = 1.0,
+      }) async {
     try {
       // This is a simplified implementation
       // In a real app, you would use a more sophisticated algorithm to find services along a route
@@ -549,13 +572,13 @@ class ServiceLocatorService {
       // Sort by distance from the first point (origin)
       if (routePoints.isNotEmpty) {
         services.sort((a, b) {
-          double distanceA = _calculateDistance(
+          double distanceA = _locationService.calculateDistanceCoordinates(
               routePoints.first.latitude,
               routePoints.first.longitude,
               a.latitude,
               a.longitude
           );
-          double distanceB = _calculateDistance(
+          double distanceB = _locationService.calculateDistanceCoordinates(
               routePoints.first.latitude,
               routePoints.first.longitude,
               b.latitude,
@@ -584,7 +607,7 @@ class ServiceLocatorService {
       LatLng prevPoint = routePoints[i - 1];
       LatLng currentPoint = routePoints[i];
 
-      double segmentDistance = _calculateDistance(
+      double segmentDistance = _locationService.calculateDistanceCoordinates(
           prevPoint.latitude,
           prevPoint.longitude,
           currentPoint.latitude,
@@ -605,14 +628,6 @@ class ServiceLocatorService {
     }
 
     return sampledPoints;
-  }
-
-  // Helper method to calculate distance between two points in km
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double p = 0.017453292519943295; // Math.PI / 180
-    final double a = 0.5 - cos((lat2 - lat1) * p) / 2 +
-        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
-    return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
   }
 
   // Helper method to determine category from Google Place
@@ -692,7 +707,7 @@ class ServiceLocatorService {
 
           // Update distances and durations
           services = services.map((service) {
-            double distance = _calculateDistance(
+            double distance = _locationService.calculateDistanceCoordinates(
                 currentLocation.latitude,
                 currentLocation.longitude,
                 service.latitude,

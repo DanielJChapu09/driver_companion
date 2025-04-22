@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import '../model/route_model.dart';
+import 'navigation_service_interface.dart';
 
-class NavigationService {
+class NavigationService implements INavigationService {
   StreamSubscription<Position>? _locationSubscription;
   final StreamController<Position> _locationController = StreamController<Position>.broadcast();
   final StreamController<int> _stepController = StreamController<int>.broadcast();
@@ -19,19 +21,36 @@ class NavigationService {
   Timer? _simulationTimer;
 
   // Streams
+  @override
   Stream<Position> get locationStream => _locationController.stream;
+
+  @override
   Stream<int> get stepStream => _stepController.stream;
+
+  @override
   Stream<String> get instructionStream => _instructionController.stream;
+
+  @override
   Stream<double> get distanceStream => _distanceController.stream;
+
+  @override
   Stream<double> get durationStream => _durationController.stream;
+
+  @override
   Stream<bool> get arrivalStream => _arrivalController.stream;
 
   // Getters
+  @override
   NavigationRoute? get currentRoute => _currentRoute;
+
+  @override
   int get currentStepIndex => _currentStepIndex;
+
+  @override
   bool get isNavigating => _isNavigating;
 
   // Initialize location service
+  @override
   Future<bool> initialize() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -57,6 +76,7 @@ class NavigationService {
   }
 
   // Start navigation
+  @override
   Future<bool> startNavigation(NavigationRoute route) async {
     try {
       if (_isNavigating) {
@@ -87,6 +107,7 @@ class NavigationService {
   }
 
   // Stop navigation
+  @override
   Future<void> stopNavigation() async {
     _isNavigating = false;
     _currentRoute = null;
@@ -161,6 +182,7 @@ class NavigationService {
   }
 
   // Simulate navigation (for testing)
+  @override
   void simulateNavigation(NavigationRoute route, {double speedFactor = 10.0}) {
     if (_isNavigating) {
       stopNavigation();
@@ -235,6 +257,7 @@ class NavigationService {
   }
 
   // Dispose resources
+  @override
   void dispose() {
     _locationSubscription?.cancel();
     _locationController.close();

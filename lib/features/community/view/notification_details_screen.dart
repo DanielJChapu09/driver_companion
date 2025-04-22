@@ -1,25 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
-import '../../../config/confidential/apikeys.dart';
-import '../../../firebase_options.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 
-class NotificationDetailScreen extends StatelessWidget {
+class NotificationDetailScreen extends StatefulWidget {
   final RoadNotification notification;
-  final CommunityController controller = Get.find<CommunityController>();
 
   NotificationDetailScreen({super.key, required this.notification});
+
+  @override
+  State<NotificationDetailScreen> createState() => _NotificationDetailScreenState();
+}
+
+class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
+  final CommunityController controller = Get.find<CommunityController>();
+  GoogleMapController? mapController;
+  Set<Marker> _markers = {};
+  bool _darkMode = false;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(notification.type.capitalize!),
+        title: Text(widget.notification.type.capitalize!),
         actions: [
-          if (notification.userId == controller.currentLocation.value?.city)
+          IconButton(
+            icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
+            onPressed: () {
+              setState(() {
+                _darkMode = !_darkMode;
+              });
+            },
+          ),
+          if (widget.notification.userId == controller.currentLocation.value?.city)
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'delete') {
@@ -60,19 +75,29 @@ class NotificationDetailScreen extends StatelessWidget {
             // Map showing the notification location
             Container(
               height: 200,
-              child: MapboxMap(
-                accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+              child: GoogleMap(
                 initialCameraPosition: CameraPosition(
-                  target: LatLng(notification.latitude, notification.longitude),
+                  target: LatLng(widget.notification.latitude, widget.notification.longitude),
                   zoom: 14.0,
                 ),
-                onMapCreated: (MapboxMapController mapController) {
-                  mapController.addSymbol(SymbolOptions(
-                    geometry: LatLng(notification.latitude, notification.longitude),
-                    iconImage: _getMarkerIconForType(notification.type),
-                    iconSize: 1.5,
-                  ));
+                onMapCreated: (GoogleMapController controller) {
+                  mapController = controller;
+                  setState(() {
+                    _markers.add(
+                      Marker(
+                        markerId: MarkerId('notification'),
+                        position: LatLng(
+                          widget.notification.latitude,
+                          widget.notification.longitude,
+                        ),
+                        icon: _getMarkerIconForType(widget.notification.type),
+                        infoWindow: InfoWindow(title: widget.notification.type),
+                      ),
+                    );
+                  });
                 },
+                markers: _markers,
+                myLocationEnabled: true,
               ),
             ),
 
@@ -84,19 +109,19 @@ class NotificationDetailScreen extends StatelessWidget {
                   // Notification header
                   Row(
                     children: [
-                      _buildTypeIcon(notification.type),
+                      _buildTypeIcon(widget.notification.type),
                       SizedBox(width: 8),
                       Text(
-                        notification.type.toUpperCase(),
+                        widget.notification.type.toUpperCase(),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
-                          color: _getColorForType(notification.type),
+                          color: _getColorForType(widget.notification.type),
                         ),
                       ),
                       Spacer(),
                       Text(
-                        DateFormat('MMM d, h:mm a').format(notification.timestamp),
+                        DateFormat('MMM d, h:mm a').format(widget.notification.timestamp),
                         style: TextStyle(color: Colors.grey),
                       ),
                     ],
@@ -106,14 +131,14 @@ class NotificationDetailScreen extends StatelessWidget {
 
                   // Notification message
                   Text(
-                    notification.message,
+                    widget.notification.message,
                     style: TextStyle(fontSize: 18),
                   ),
 
                   SizedBox(height: 16),
 
                   // Images if available
-                  if (notification.images.isNotEmpty) ...[
+                  if (widget.notification.images.isNotEmpty) ...[
                     Text(
                       'Photos',
                       style: TextStyle(
@@ -130,7 +155,7 @@ class NotificationDetailScreen extends StatelessWidget {
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
                       ),
-                      itemCount: notification.images.length,
+                      itemCount: widget.notification.images.length,
                       itemBuilder: (context, index) {
                         return GestureDetector(
                           onTap: () {
@@ -144,7 +169,7 @@ class NotificationDetailScreen extends StatelessWidget {
                               body: Center(
                                 child: InteractiveViewer(
                                   child: Image.network(
-                                    notification.images[index],
+                                    widget.notification.images[index],
                                     fit: BoxFit.contain,
                                   ),
                                 ),
@@ -154,7 +179,7 @@ class NotificationDetailScreen extends StatelessWidget {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: Image.network(
-                              notification.images[index],
+                              widget.notification.images[index],
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -179,7 +204,7 @@ class NotificationDetailScreen extends StatelessWidget {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${notification.city}',
+                          '${widget.notification.city}',
                           style: TextStyle(fontSize: 16),
                         ),
                       ),
@@ -200,11 +225,11 @@ class NotificationDetailScreen extends StatelessWidget {
                   Row(
                     children: [
                       CircleAvatar(
-                        child: Text(notification.userName.substring(0, 1)),
+                        child: Text(widget.notification.userName.substring(0, 1)),
                       ),
                       SizedBox(width: 8),
                       Text(
-                        notification.userName,
+                        widget.notification.userName,
                         style: TextStyle(fontSize: 16),
                       ),
                     ],
@@ -218,9 +243,9 @@ class NotificationDetailScreen extends StatelessWidget {
                     children: [
                       _buildActionButton(
                         icon: Icons.thumb_up,
-                        label: 'Helpful (${notification.likeCount})',
+                        label: 'Helpful (${widget.notification.likeCount})',
                         onTap: () {
-                          controller.likeNotification(notification.id);
+                          controller.likeNotification(widget.notification.id);
                         },
                       ),
                       _buildActionButton(
@@ -292,7 +317,7 @@ class NotificationDetailScreen extends StatelessWidget {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                controller.deleteNotification(notification.id);
+                controller.deleteNotification(widget.notification.id);
                 Get.back();
               },
               child: Text('Delete', style: TextStyle(color: Colors.red)),
@@ -319,7 +344,7 @@ class NotificationDetailScreen extends StatelessWidget {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                controller.markNotificationAsResolved(notification.id);
+                controller.markNotificationAsResolved(widget.notification.id);
                 Get.back();
               },
               child: Text('Confirm', style: TextStyle(color: Colors.green)),
@@ -379,21 +404,20 @@ class NotificationDetailScreen extends StatelessWidget {
   }
 
   // Get appropriate marker icon based on notification type
-  String _getMarkerIconForType(String type) {
+  BitmapDescriptor _getMarkerIconForType(String type) {
     switch (type.toLowerCase()) {
       case 'accident':
-        return 'accident';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'traffic':
-        return 'traffic';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
       case 'police':
-        return 'police';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'hazard':
-        return 'hazard';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
       case 'construction':
-        return 'construction';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
       default:
-        return 'marker';
+        return BitmapDescriptor.defaultMarker;
     }
   }
 }
-

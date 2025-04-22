@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
-import '../../../firebase_options.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'notification_details_screen.dart';
@@ -16,9 +15,17 @@ class CommunityMapScreen extends StatefulWidget {
 
 class _CommunityMapScreenState extends State<CommunityMapScreen> {
   final CommunityController controller = Get.find<CommunityController>();
-  MapboxMapController? mapController;
+  GoogleMapController? mapController;
   bool showAllTypes = true;
   Set<String> selectedTypes = {'accident', 'traffic', 'police', 'hazard', 'construction', 'other'};
+  bool _darkMode = false;
+  Set<Marker> _markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _updateMapMarkers();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +33,14 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
       appBar: AppBar(
         title: Text('Road Alerts Map'),
         actions: [
+          IconButton(
+            icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
+            onPressed: () {
+              setState(() {
+                _darkMode = !_darkMode;
+              });
+            },
+          ),
           IconButton(
             icon: Icon(Icons.filter_list),
             onPressed: _showFilterDialog,
@@ -51,8 +66,7 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
 
         return Stack(
           children: [
-            MapboxMap(
-              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+            GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   controller.currentLocation.value!.latitude,
@@ -60,13 +74,12 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
                 ),
                 zoom: 13.0,
               ),
-              onMapCreated: (MapboxMapController controller) {
+              onMapCreated: (GoogleMapController controller) {
                 mapController = controller;
                 _updateMapMarkers();
               },
-              onStyleLoadedCallback: () {
-                // Map style loaded
-              },
+              myLocationEnabled: true,
+              markers: _markers,
             ),
 
             // Legend for map markers
@@ -120,7 +133,7 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
     );
   }
 
-  // Build legend item
+// Build legend item
   Widget _buildLegendItem(String label, Color color, IconData icon) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 2),
@@ -135,23 +148,29 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
     );
   }
 
-  // Update map markers based on notifications
+// Update map markers based on notifications
   void _updateMapMarkers() {
     if (mapController == null) return;
 
     // Clear existing markers
-    mapController!.clearSymbols();
+    setState(() {
+      _markers.clear();
+    });
 
     // Add marker for current location
     if (controller.currentLocation.value != null) {
-      mapController!.addSymbol(SymbolOptions(
-        geometry: LatLng(
-          controller.currentLocation.value!.latitude,
-          controller.currentLocation.value!.longitude,
-        ),
-        iconImage: 'car',
-        iconSize: 1.5,
-      ));
+      setState(() {
+        _markers.add(
+          Marker(
+            markerId: MarkerId('currentLocation'),
+            position: LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          ),
+        );
+      });
     }
 
     // Add markers for filtered notifications
@@ -160,39 +179,23 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
         .toList();
 
     for (var notification in filteredNotifications) {
-      mapController!.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(
-            notification.latitude,
-            notification.longitude,
+      setState(() {
+        _markers.add(
+          Marker(
+            markerId: MarkerId(notification.id),
+            position: LatLng(
+              notification.latitude,
+              notification.longitude,
+            ),
+            icon: _getMarkerIconForType(notification.type),
+            infoWindow: InfoWindow(title: notification.type),
           ),
-          iconImage: _getMarkerIconForType(notification.type),
-          iconSize: 1.0,
-          textField: notification.type,
-          textOffset: Offset(0, 1.5),
-        ),
-        {
-          'id': notification.id,
-          'type': notification.type,
-        },
-      ).then((symbol) {
-        // Add tap handler for the symbol
-        mapController!.onSymbolTapped.add((Symbol symbol) {
-          if (symbol.data != null && symbol.data!.containsKey('id')) {
-            String id = symbol.data!['id'];
-            RoadNotification? tappedNotification = controller.nearbyNotifications
-                .firstWhereOrNull((n) => n.id == id);
-
-            if (tappedNotification != null) {
-              Get.to(() => NotificationDetailScreen(notification: tappedNotification));
-            }
-          }
-        });
+        );
       });
     }
   }
 
-  // Center map on current location
+// Center map on current location
   void _centerOnCurrentLocation() {
     if (mapController != null && controller.currentLocation.value != null) {
       mapController!.animateCamera(
@@ -207,7 +210,7 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
     }
   }
 
-  // Show filter dialog
+// Show filter dialog
   void _showFilterDialog() {
     showDialog(
       context: context,
@@ -262,7 +265,7 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
     );
   }
 
-  // Build filter checkbox
+// Build filter checkbox
   Widget _buildFilterCheckbox(StateSetter setState, String label, String type, Color color, IconData icon) {
     return CheckboxListTile(
       title: Row(
@@ -285,22 +288,21 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
     );
   }
 
-  // Get appropriate marker icon based on notification type
-  String _getMarkerIconForType(String type) {
+// Get appropriate marker icon based on notification type
+  BitmapDescriptor _getMarkerIconForType(String type) {
     switch (type.toLowerCase()) {
       case 'accident':
-        return 'accident';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'traffic':
-        return 'traffic';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
       case 'police':
-        return 'police';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'hazard':
-        return 'hazard';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
       case 'construction':
-        return 'construction';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
       default:
-        return 'marker';
+        return BitmapDescriptor.defaultMarker;
     }
   }
 }
-

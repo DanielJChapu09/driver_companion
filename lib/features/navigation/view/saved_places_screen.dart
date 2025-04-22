@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../controller/navigation_controller.dart';
 import '../model/place_model.dart';
 
 class SavedPlacesScreen extends StatefulWidget {
+  const SavedPlacesScreen({super.key});
+
   @override
   _SavedPlacesScreenState createState() => _SavedPlacesScreenState();
 }
@@ -446,4 +448,3 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     }
   }
 }
-

@@ -43,12 +43,12 @@ class InitialBinding extends Bindings {
       );
 
       Get.put(
-          NavigationController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),
+          NavigationController(googleMapsApiKey: APIKeys.GGOOGLEMAPSAPIKEY),
           permanent: true
       );
 
       Get.put(
-          ServiceLocatorController(mapboxAccessToken: APIKeys.GGOOGLEMAPSAPIKEY),
+          ServiceLocatorController(apiKey: APIKeys.GGOOGLEMAPSAPIKEY),
           permanent: true
       );
 
