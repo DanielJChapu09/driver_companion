@@ -1,15 +1,19 @@
 import 'dart:convert';
-import 'dart:math';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/core/utils/logs.dart';
+import 'package:mymaptest/features/service_locator/service/service_locator_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../model/service_location_model.dart';
+import 'service_repository_interface.dart';
+import 'location_service.dart';
 
-class ServiceLocatorService {
-  final String _accessToken;
+/// Implementation of the service repository interface
+class ServiceRepository implements IServiceRepository {
+  final String _apiKey;
   final Uuid _uuid = Uuid();
+  final ILocationService _locationService;
 
   // Cache keys
   static const String _recentServicesKey = 'recent_services';
@@ -17,7 +21,7 @@ class ServiceLocatorService {
   static const int _cacheDurationHours = 24; // Cache duration in hours
 
   // Service categories
-  static const Map<String, String> serviceCategories = {
+  static const Map<String, String> _serviceCategories = {
     'gas_station': 'Gas Station',
     'mechanic': 'Mechanic',
     'car_wash': 'Car Wash',
@@ -32,116 +36,113 @@ class ServiceLocatorService {
     'convenience_store': 'Convenience Store',
   };
 
-  // Mapbox POI types mapping to our categories
-  final Map<String, List<String>> _poiTypeMapping = {
-    'gas_station': ['fuel', 'gas_station', 'gas', 'petrol_station'],
-    'mechanic': ['car_repair', 'mechanic', 'automotive', 'car_service'],
+  // Google Places types mapping to our categories
+  final Map<String, List<String>> _placeTypeMapping = {
+    'gas_station': ['gas_station'],
+    'mechanic': ['car_repair'],
     'car_wash': ['car_wash'],
-    'parking': ['parking', 'parking_lot', 'parking_garage'],
-    'restaurant': ['restaurant', 'food', 'cafe', 'fast_food'],
-    'hotel': ['hotel', 'lodging', 'motel'],
-    'hospital': ['hospital', 'clinic', 'emergency_room', 'medical_center'],
-    'police': ['police', 'police_station'],
-    'ev_charging': ['charging_station', 'ev_charging'],
-    'rest_area': ['rest_area', 'rest_stop'],
+    'parking': ['parking'],
+    'restaurant': ['restaurant', 'cafe', 'food'],
+    'hotel': ['lodging', 'hotel'],
+    'hospital': ['hospital', 'doctor', 'health'],
+    'police': ['police'],
+    'ev_charging': ['ev_charging_station'],
+    'rest_area': ['rest_stop'],
     'atm': ['atm', 'bank'],
-    'convenience_store': ['convenience', 'convenience_store', 'shop'],
+    'convenience_store': ['convenience_store', 'supermarket'],
   };
 
-  ServiceLocatorService({required String accessToken}) : _accessToken = accessToken;
+  ServiceRepository({
+    required String apiKey,
+    ILocationService? locationService,
+  }) : _apiKey = apiKey,
+        _locationService = locationService ?? LocationService();
 
-  // Search for services by category
+  @override
+  Map<String, String> getServiceCategories() {
+    return _serviceCategories;
+  }
+
+  @override
   Future<List<ServiceLocation>> searchServicesByCategory(
       String category,
-      LatLng currentLocation,
-      {double radiusKm = 10.0}
-      ) async {
+      LatLng currentLocation, {
+        double radiusKm = 10.0,
+      }) async {
     try {
       // Check cache first
-      final cachedServices = await _getCachedServicesByCategory(category, currentLocation, radiusKm);
+      final cachedServices = await _getCachedServicesByCategory(
+          category,
+          currentLocation,
+          radiusKm
+      );
+
       if (cachedServices.isNotEmpty) {
         return cachedServices;
       }
 
-      // Convert our category to Mapbox POI types
-      final poiTypes = _poiTypeMapping[category] ?? [category];
-      final poiTypesString = poiTypes.join(',');
+      // Convert our category to Google Places types
+      final placeTypes = _placeTypeMapping[category] ?? [category];
+      final placeType = placeTypes.first; // Google Places API takes one type at a time
 
-      // Build the URL for Mapbox POI search
-      String url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/$poiTypesString.json'
-          '?access_token=$_accessToken'
-          '&limit=15'
-          '&types=poi'
-          '&proximity=${currentLocation.longitude},${currentLocation.latitude}'
-          '&radius=${radiusKm * 1000}'; // Convert km to meters
+      // Build the URL for Google Places API search
+      String url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+          '?key=$_apiKey'
+          '&location=${currentLocation.latitude},${currentLocation.longitude}'
+          '&radius=${radiusKm * 1000}' // Convert km to meters
+          '&type=$placeType';
 
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final features = data['features'] as List;
 
+        if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
+          DevLogs.logError('Google Places API error: ${data['status']}');
+          throw Exception('Google Places API error: ${data['status']}');
+        }
+
+        final results = data['results'] as List? ?? [];
         List<ServiceLocation> services = [];
 
-        for (var feature in features) {
-          final coordinates = feature['geometry']['coordinates'] as List;
-          final properties = feature['properties'] as Map<String, dynamic>? ?? {};
-          final context = feature['context'] as List? ?? [];
+        for (var place in results) {
+          final location = place['geometry']['location'];
+          double lat = location['lat'];
+          double lng = location['lng'];
 
           // Extract place details
-          String name = feature['text'] ?? '';
-          String address = feature['place_name'] ?? '';
+          String name = place['name'] ?? '';
+          String address = place['vicinity'] ?? '';
+          String placeId = place['place_id'] ?? _uuid.v4();
 
-          // Extract additional details from properties and context
-          String? phoneNumber;
-          String? website;
-          double? rating;
-          bool isOpen = true; // Default to true since Mapbox doesn't always provide this
-          List<String> amenities = [];
-
-          // Try to extract more details from properties
-          if (properties.containsKey('phone')) {
-            phoneNumber = properties['phone'];
-          }
-
-          if (properties.containsKey('website')) {
-            website = properties['website'];
-          }
-
-          if (properties.containsKey('rating')) {
-            rating = properties['rating']?.toDouble();
-          }
-
-          if (properties.containsKey('open')) {
-            isOpen = properties['open'] == true;
-          }
+          // Extract additional details
+          double? rating = place['rating']?.toDouble();
+          bool isOpen = place['opening_hours']?['open_now'] ?? true;
 
           // Calculate distance (straight line)
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
-              coordinates[1],
-              coordinates[0]
+              lat,
+              lng
           );
 
           // Estimate duration (assuming average speed of 50 km/h)
           double duration = (distance / 50) * 60; // Convert to minutes
 
           services.add(ServiceLocation(
-            id: feature['id'] ?? _uuid.v4(),
+            id: placeId,
             name: name,
             address: address,
-            latitude: coordinates[1],
-            longitude: coordinates[0],
+            latitude: lat,
+            longitude: lng,
             category: category,
-            phoneNumber: phoneNumber,
-            website: website,
             rating: rating,
             isOpen: isOpen,
-            properties: properties,
+            properties: place.cast<String, dynamic>(),
             distance: distance,
             duration: duration,
-            amenities: amenities,
+            amenities: _extractAmenities(place),
           ));
         }
 
@@ -159,61 +160,85 @@ class ServiceLocatorService {
     }
   }
 
-  // Search for services by name or keyword
+  // Extract amenities from Google Place result
+  List<String> _extractAmenities(Map<String, dynamic> place) {
+    List<String> amenities = [];
+
+    if (place.containsKey('types')) {
+      final types = place['types'] as List;
+      if (types.contains('wheelchair_accessible')) amenities.add('Wheelchair Accessible');
+      if (types.contains('wifi')) amenities.add('WiFi');
+      if (types.contains('parking')) amenities.add('Parking');
+      if (types.contains('restaurant')) amenities.add('Restaurant');
+    }
+
+    return amenities;
+  }
+
+  @override
   Future<List<ServiceLocation>> searchServicesByKeyword(
       String keyword,
-      LatLng currentLocation,
-      {double radiusKm = 10.0}
-      ) async {
+      LatLng currentLocation, {
+        double radiusKm = 10.0,
+      }) async {
     try {
-      // Build the URL for Mapbox POI search
-      String url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/$keyword.json'
-          '?access_token=$_accessToken'
-          '&limit=15'
-          '&types=poi'
-          '&proximity=${currentLocation.longitude},${currentLocation.latitude}'
+      // Build the URL for Google Places text search
+      String url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
+          '?key=$_apiKey'
+          '&query=$keyword'
+          '&location=${currentLocation.latitude},${currentLocation.longitude}'
           '&radius=${radiusKm * 1000}'; // Convert km to meters
 
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final features = data['features'] as List;
 
+        if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
+          DevLogs.logError('Google Places API error: ${data['status']}');
+          throw Exception('Google Places API error: ${data['status']}');
+        }
+
+        final results = data['results'] as List? ?? [];
         List<ServiceLocation> services = [];
 
-        for (var feature in features) {
-          final coordinates = feature['geometry']['coordinates'] as List;
-          final properties = feature['properties'] as Map<String, dynamic>? ?? {};
+        for (var place in results) {
+          final location = place['geometry']['location'];
+          double lat = location['lat'];
+          double lng = location['lng'];
 
           // Extract place details
-          String name = feature['text'] ?? '';
-          String address = feature['place_name'] ?? '';
+          String name = place['name'] ?? '';
+          String address = place['formatted_address'] ?? place['vicinity'] ?? '';
+          String placeId = place['place_id'] ?? _uuid.v4();
 
-          // Determine category based on properties or name
-          String category = _determineCategoryFromFeature(feature);
+          // Determine category based on place types
+          String category = _determineCategoryFromPlace(place);
 
           // Calculate distance (straight line)
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
-              coordinates[1],
-              coordinates[0]
+              lat,
+              lng
           );
 
           // Estimate duration (assuming average speed of 50 km/h)
           double duration = (distance / 50) * 60; // Convert to minutes
 
           services.add(ServiceLocation(
-            id: feature['id'] ?? _uuid.v4(),
+            id: placeId,
             name: name,
             address: address,
-            latitude: coordinates[1],
-            longitude: coordinates[0],
+            latitude: lat,
+            longitude: lng,
             category: category,
-            properties: properties,
+            rating: place['rating']?.toDouble(),
+            isOpen: place['opening_hours']?['open_now'] ?? true,
+            properties: place.cast<String, dynamic>(),
             distance: distance,
             duration: duration,
+            amenities: _extractAmenities(place),
           ));
         }
 
@@ -228,8 +253,11 @@ class ServiceLocatorService {
     }
   }
 
-  // Get details for a specific service
-  Future<ServiceLocation?> getServiceDetails(String serviceId, LatLng currentLocation) async {
+  @override
+  Future<ServiceLocation?> getServiceDetails(
+      String serviceId,
+      LatLng currentLocation,
+      ) async {
     try {
       // Check if we have it in cache
       final prefs = await SharedPreferences.getInstance();
@@ -243,7 +271,7 @@ class ServiceLocatorService {
           ServiceLocation service = ServiceLocation.fromJson(recentServices[serviceIndex]);
 
           // Update distance and duration
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               service.latitude,
@@ -262,7 +290,7 @@ class ServiceLocatorService {
           ServiceLocation service = ServiceLocation.fromJson(favoriteServices[serviceIndex]);
 
           // Update distance and duration
-          double distance = _calculateDistance(
+          double distance = _locationService.calculateDistanceCoordinates(
               currentLocation.latitude,
               currentLocation.longitude,
               service.latitude,
@@ -274,19 +302,72 @@ class ServiceLocatorService {
         }
       }
 
-      // If not in cache, try to fetch from Mapbox
-      // Note: Mapbox doesn't have a direct "get details by ID" API, so this is a workaround
-      // In a real app, you might want to use Google Places API or similar for this
+      // If not in cache, fetch details from Google Places API
+      String url = 'https://maps.googleapis.com/maps/api/place/details/json'
+          '?key=$_apiKey'
+          '&place_id=$serviceId'
+          '&fields=name,formatted_address,geometry,opening_hours,formatted_phone_number,website,rating,types';
 
-      // For now, return null if not found in cache
-      return null;
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] != 'OK') {
+          DevLogs.logError('Google Places API error: ${data['status']}');
+          return null;
+        }
+
+        final result = data['result'];
+        final location = result['geometry']['location'];
+
+        // Extract place details
+        String name = result['name'] ?? '';
+        String address = result['formatted_address'] ?? '';
+        String phoneNumber = result['formatted_phone_number'] ?? '';
+        String website = result['website'] ?? '';
+        double? rating = result['rating']?.toDouble();
+        bool isOpen = result['opening_hours']?['open_now'] ?? true;
+
+        // Determine category based on place types
+        String category = _determineCategoryFromPlace(result);
+
+        // Calculate distance and duration
+        double distance = _locationService.calculateDistanceCoordinates(
+            currentLocation.latitude,
+            currentLocation.longitude,
+            location['lat'],
+            location['lng']
+        );
+        double duration = (distance / 50) * 60; // Convert to minutes
+
+        return ServiceLocation(
+          id: serviceId,
+          name: name,
+          address: address,
+          latitude: location['lat'],
+          longitude: location['lng'],
+          category: category,
+          phoneNumber: phoneNumber,
+          website: website,
+          rating: rating,
+          isOpen: isOpen,
+          properties: result.cast<String, dynamic>(),
+          distance: distance,
+          duration: duration,
+          amenities: _extractAmenities(result),
+        );
+      } else {
+        DevLogs.logError('Failed to get service details: ${response.statusCode}');
+        return null;
+      }
     } catch (e) {
       DevLogs.logError('Error getting service details: $e');
       return null;
     }
   }
 
-  // Add a service to favorites
+  @override
   Future<bool> addServiceToFavorites(ServiceLocation service) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -315,7 +396,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Remove a service from favorites
+  @override
   Future<bool> removeServiceFromFavorites(String serviceId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -336,7 +417,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Get all favorite services
+  @override
   Future<List<ServiceLocation>> getFavoriteServices(LatLng currentLocation) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -353,7 +434,7 @@ class ServiceLocatorService {
         ServiceLocation serviceLocation = ServiceLocation.fromJson(service);
 
         // Update distance and duration
-        double distance = _calculateDistance(
+        double distance = _locationService.calculateDistanceCoordinates(
             currentLocation.latitude,
             currentLocation.longitude,
             serviceLocation.latitude,
@@ -361,7 +442,11 @@ class ServiceLocatorService {
         );
         double duration = (distance / 50) * 60; // Convert to minutes
 
-        services.add(serviceLocation.copyWith(distance: distance, duration: duration));
+        services.add(serviceLocation.copyWith(
+          distance: distance,
+          duration: duration,
+          isFavorite: true,
+        ));
       }
 
       // Sort by distance
@@ -374,7 +459,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Add a service to recent
+  @override
   Future<bool> addServiceToRecent(ServiceLocation service) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -404,7 +489,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Get recent services
+  @override
   Future<List<ServiceLocation>> getRecentServices(LatLng currentLocation) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -421,7 +506,7 @@ class ServiceLocatorService {
         ServiceLocation serviceLocation = ServiceLocation.fromJson(service);
 
         // Update distance and duration
-        double distance = _calculateDistance(
+        double distance = _locationService.calculateDistanceCoordinates(
             currentLocation.latitude,
             currentLocation.longitude,
             serviceLocation.latitude,
@@ -439,7 +524,7 @@ class ServiceLocatorService {
     }
   }
 
-  // Clear recent services
+  @override
   Future<bool> clearRecentServices() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -451,12 +536,12 @@ class ServiceLocatorService {
     }
   }
 
-  // Get services along a route
+  @override
   Future<List<ServiceLocation>> getServicesAlongRoute(
       String category,
-      List<LatLng> routePoints,
-      {double bufferDistanceKm = 1.0}
-      ) async {
+      List<LatLng> routePoints, {
+        double bufferDistanceKm = 1.0,
+      }) async {
     try {
       // This is a simplified implementation
       // In a real app, you would use a more sophisticated algorithm to find services along a route
@@ -487,13 +572,13 @@ class ServiceLocatorService {
       // Sort by distance from the first point (origin)
       if (routePoints.isNotEmpty) {
         services.sort((a, b) {
-          double distanceA = _calculateDistance(
+          double distanceA = _locationService.calculateDistanceCoordinates(
               routePoints.first.latitude,
               routePoints.first.longitude,
               a.latitude,
               a.longitude
           );
-          double distanceB = _calculateDistance(
+          double distanceB = _locationService.calculateDistanceCoordinates(
               routePoints.first.latitude,
               routePoints.first.longitude,
               b.latitude,
@@ -522,7 +607,7 @@ class ServiceLocatorService {
       LatLng prevPoint = routePoints[i - 1];
       LatLng currentPoint = routePoints[i];
 
-      double segmentDistance = _calculateDistance(
+      double segmentDistance = _locationService.calculateDistanceCoordinates(
           prevPoint.latitude,
           prevPoint.longitude,
           currentPoint.latitude,
@@ -545,33 +630,26 @@ class ServiceLocatorService {
     return sampledPoints;
   }
 
-  // Helper method to calculate distance between two points in km
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double p = 0.017453292519943295; // Math.PI / 180
-    final double a = 0.5 - cos((lat2 - lat1) * p) / 2 +
-        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
-    return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
-  }
+  // Helper method to determine category from Google Place
+  String _determineCategoryFromPlace(dynamic place) {
+    // Try to extract category from types
+    final types = place['types'] as List? ?? [];
 
-  // Helper method to determine category from Mapbox feature
-  String _determineCategoryFromFeature(dynamic feature) {
-    // Try to extract category from properties
-    final properties = feature['properties'] as Map<String, dynamic>? ?? {};
-    if (properties.containsKey('category')) {
-      String propCategory = properties['category'];
-
-      // Map to our categories
-      for (var entry in _poiTypeMapping.entries) {
-        if (entry.value.contains(propCategory.toLowerCase())) {
-          return entry.key;
+    if (types.isNotEmpty) {
+      // Map Google Place types to our categories
+      for (var entry in _placeTypeMapping.entries) {
+        for (var type in types) {
+          if (entry.value.contains(type)) {
+            return entry.key;
+          }
         }
       }
     }
 
     // Try to determine from the place name
-    String name = feature['text'] ?? '';
-    String placeName = feature['place_name'] ?? '';
-    String combinedText = '$name $placeName'.toLowerCase();
+    String name = place['name'] ?? '';
+    String formattedAddress = place['formatted_address'] ?? place['vicinity'] ?? '';
+    String combinedText = '$name $formattedAddress'.toLowerCase();
 
     // Check for keywords in the name
     if (combinedText.contains('gas') || combinedText.contains('fuel') || combinedText.contains('petrol')) {
@@ -629,7 +707,7 @@ class ServiceLocatorService {
 
           // Update distances and durations
           services = services.map((service) {
-            double distance = _calculateDistance(
+            double distance = _locationService.calculateDistanceCoordinates(
                 currentLocation.latitude,
                 currentLocation.longitude,
                 service.latitude,
@@ -672,4 +750,3 @@ class ServiceLocatorService {
     }
   }
 }
-

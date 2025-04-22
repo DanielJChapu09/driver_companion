@@ -1,217 +1,164 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
-import 'package:mymaptest/config/confidential/apikeys.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../navigation/controller/navigation_controller.dart';
-import '../controller/service_locator_controller.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../model/service_location_model.dart';
+import '../controller/service_locator_controller.dart';
 
-class ServiceDetailScreen extends StatelessWidget {
+class ServiceDetailsScreen extends StatelessWidget {
   final ServiceLocation service;
-  final ServiceLocatorController _controller = Get.find<ServiceLocatorController>();
+  final ServiceLocatorController controller = Get.find<ServiceLocatorController>();
 
-  ServiceDetailScreen({required this.service});
+  ServiceDetailsScreen({
+    Key? key,
+    required this.service,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          // App bar
-          SliverAppBar(
-            expandedHeight: 200.0,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(service.name),
-              background: _buildMapPreview(),
-            ),
-            actions: [
-              // Favorite button
-              Obx(() {
-                final isFavorite = _controller.favoriteServices.any((s) => s.id == service.id);
-                return IconButton(
-                  icon: Icon(
-                    isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: isFavorite ? Colors.red : null,
-                  ),
-                  onPressed: () {
-                    if (isFavorite) {
-                      _controller.removeServiceFromFavorites(service.id);
-                    } else {
-                      _controller.addServiceToFavorites(service);
-                    }
-                  },
-                );
-              }),
-
-              // Share button
-              IconButton(
-                icon: Icon(Icons.share),
-                onPressed: () {
-                  // Share functionality would go here
-                  Get.snackbar(
-                    'Share',
-                    'Sharing ${service.name}',
-                    snackPosition: SnackPosition.BOTTOM,
-                  );
-                },
+      appBar: AppBar(
+        title: Text(service.name),
+        actions: [
+          Obx(() {
+            bool isFavorite = controller.favoriteServices.any((s) => s.id == service.id);
+            return IconButton(
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? Colors.red : null,
               ),
-            ],
+              onPressed: () {
+                if (isFavorite) {
+                  controller.removeServiceFromFavorites(service.id);
+                } else {
+                  controller.addServiceToFavorites(service);
+                }
+              },
+            );
+          }),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Map showing the service location
+          SizedBox(
+            height: 200,
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(service.latitude, service.longitude),
+                zoom: 15.0,
+              ),
+              markers: {
+                Marker(
+                  markerId: MarkerId(service.id),
+                  position: LatLng(service.latitude, service.longitude),
+                  infoWindow: InfoWindow(title: service.name),
+                ),
+              },
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              mapToolbarEnabled: true,
+              zoomControlsEnabled: true,
+            ),
           ),
 
-          // Content
-          SliverToBoxAdapter(
-            child: Padding(
+          // Service details
+          Expanded(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Address
-                  _buildInfoRow(
-                    Icons.location_on,
+                  Text(
+                    service.name,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
                     service.address,
-                    onTap: () {
-                      _launchMaps();
-                    },
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Category
+                  _buildInfoRow(
+                    Icons.category,
+                    controller.getServiceCategories()[service.category] ?? service.category,
                   ),
 
-                  SizedBox(height: 16),
+                  // Rating
+                  if (service.rating != null)
+                    _buildRatingRow(service.rating!),
 
-                  // Distance and duration
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildInfoCard(
-                          Icons.directions_car,
-                          'Distance',
-                          '${service.distance?.toStringAsFixed(1) ?? "?"} km',
-                        ),
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: _buildInfoCard(
-                          Icons.access_time,
-                          'ETA',
-                          service.duration != null
-                              ? '${service.duration!.toStringAsFixed(0)} min'
-                              : 'Unknown',
-                        ),
-                      ),
-                    ],
+                  // Open status
+                  _buildInfoRow(
+                    service.isOpen ? Icons.check_circle : Icons.cancel,
+                    service.isOpen ? 'Open now' : 'Closed',
+                    color: service.isOpen ? Colors.green : Colors.red,
                   ),
 
-                  SizedBox(height: 16),
+                  // Distance
+                  if (service.distance != null)
+                    _buildInfoRow(
+                      Icons.directions_car,
+                      '${service.distance!.toStringAsFixed(1)} km away',
+                    ),
+
+                  // Duration
+                  if (service.duration != null)
+                    _buildInfoRow(
+                      Icons.access_time,
+                      '${service.duration!.toStringAsFixed(0)} min drive',
+                    ),
 
                   // Phone number
-                  if (service.phoneNumber != null)
+                  if (service.phoneNumber != null && service.phoneNumber!.isNotEmpty)
                     _buildInfoRow(
                       Icons.phone,
                       service.phoneNumber!,
+                      isLink: true,
                       onTap: () {
-                        _launchPhone(service.phoneNumber!);
+                        // Launch phone call
                       },
                     ),
 
                   // Website
-                  if (service.website != null)
+                  if (service.website != null && service.website!.isNotEmpty)
                     _buildInfoRow(
                       Icons.language,
                       service.website!,
+                      isLink: true,
                       onTap: () {
-                        _launchUrl(service.website!);
+                        // Launch website
                       },
                     ),
 
-                  SizedBox(height: 16),
-
-                  // Status
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: service.isOpen ? Colors.green : Colors.red,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      service.isOpen ? 'Open' : 'Closed',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-
-                  SizedBox(height: 24),
-
-                  // Rating
-                  if (service.rating != null)
-                    Row(
-                      children: [
-                        Text(
-                          'Rating: ',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        _buildRatingStars(service.rating!),
-                        SizedBox(width: 8),
-                        Text(
-                          '(${service.reviewCount ?? 0})',
-                          style: TextStyle(
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                  SizedBox(height: 24),
-
                   // Amenities
                   if (service.amenities.isNotEmpty) ...[
-                    Text(
+                    const SizedBox(height: 16),
+                    const Text(
                       'Amenities',
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
                         fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: service.amenities.map((amenity) {
                         return Chip(
                           label: Text(amenity),
-                          backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
                         );
                       }).toList(),
                     ),
-                    SizedBox(height: 16),
                   ],
 
-                  // Payment methods
-                  if (service.paymentMethods.isNotEmpty) ...[
-                    Text(
-                      'Payment Methods',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: service.paymentMethods.map((method) {
-                        return Chip(
-                          label: Text(method),
-                          backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                        );
-                      }).toList(),
-                    ),
-                    SizedBox(height: 16),
-                  ],
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -220,207 +167,95 @@ class ServiceDetailScreen extends StatelessWidget {
       ),
       bottomNavigationBar: BottomAppBar(
         child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: Icon(Icons.directions),
-                  label: Text('Directions'),
-                  onPressed: () {
-                    _navigateToService();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: Icon(Icons.call),
-                  label: Text('Call'),
-                  onPressed: service.phoneNumber != null
-                      ? () => _launchPhone(service.phoneNumber!)
-                      : null,
-                  style: OutlinedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: ElevatedButton(
+            onPressed: () {
+              // Navigate to this location
+              Get.back();
+              _navigateToService();
+            },
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+            ),
+            child: const Text(
+              'Navigate',
+              style: TextStyle(fontSize: 16),
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Build map preview
-  Widget _buildMapPreview() {
-    return MapboxMap(
-      accessToken: APIKeys.MAPBOXPUBLICTOKEN,
-      initialCameraPosition: CameraPosition(
-        target: LatLng(service.latitude, service.longitude),
-        zoom: 15.0,
+  Widget _buildInfoRow(IconData icon, String text, {Color? color, bool isLink = false, VoidCallback? onTap}) {
+    final textWidget = Text(
+      text,
+      style: TextStyle(
+        fontSize: 16,
+        color: isLink ? Colors.blue : null,
+        decoration: isLink ? TextDecoration.underline : null,
       ),
-      onMapCreated: (MapboxMapController controller) {
-        controller.addSymbol(
-          SymbolOptions(
-            geometry: LatLng(service.latitude, service.longitude),
-            iconImage: 'marker',
-            iconSize: 1.0,
-          ),
-        );
-      },
-      myLocationEnabled: false,
-      compassEnabled: false,
-      zoomGesturesEnabled: false,
-      rotateGesturesEnabled: false,
-      scrollGesturesEnabled: false,
-      tiltGesturesEnabled: false,
-      doubleClickZoomEnabled: false,
     );
-  }
 
-  // Build info row
-  Widget _buildInfoRow(IconData icon, String text, {VoidCallback? onTap}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: InkWell(
-        onTap: onTap,
-        child: Row(
-          children: [
-            Icon(icon, color: Get.theme.primaryColor),
-            SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: onTap != null ? Get.theme.primaryColor : null,
-                ),
-              ),
-            ),
-            if (onTap != null)
-              Icon(Icons.arrow_forward_ios, size: 16),
-          ],
-        ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          isLink && onTap != null
+              ? GestureDetector(onTap: onTap, child: textWidget)
+              : textWidget,
+        ],
       ),
     );
   }
 
-  // Build info card
-  Widget _buildInfoCard(IconData icon, String title, String value) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Icon(icon, color: Get.theme.primaryColor, size: 28),
-            SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+  Widget _buildRatingRow(double rating) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          const Icon(Icons.star, color: Colors.amber, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(fontSize: 16),
+          ),
+          const SizedBox(width: 8),
+          _buildRatingStars(rating),
+        ],
       ),
     );
   }
 
-  // Build rating stars
   Widget _buildRatingStars(double rating) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (index) {
         if (index < rating.floor()) {
-          return Icon(Icons.star, color: Colors.amber, size: 20);
-        } else if (index < rating.ceil() && rating.floor() != rating.ceil()) {
-          return Icon(Icons.star_half, color: Colors.amber, size: 20);
+          return const Icon(Icons.star, color: Colors.amber, size: 16);
+        } else if (index == rating.floor() && rating % 1 > 0) {
+          return const Icon(Icons.star_half, color: Colors.amber, size: 16);
         } else {
-          return Icon(Icons.star_border, color: Colors.amber, size: 20);
+          return const Icon(Icons.star_border, color: Colors.amber, size: 16);
         }
       }),
     );
   }
 
-  // Launch maps app
-  void _launchMaps() async {
-    final url = 'https://www.google.com/maps/search/?api=1&query=${service.latitude},${service.longitude}';
-    if (await canLaunch(url)) {
-      await launch(url);
-    } else {
-      Get.snackbar(
-        'Error',
-        'Could not open maps',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    }
-  }
-
-  // Launch phone app
-  void _launchPhone(String phoneNumber) async {
-    final url = 'tel:$phoneNumber';
-    if (await canLaunch(url)) {
-      await launch(url);
-    } else {
-      Get.snackbar(
-        'Error',
-        'Could not make call',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    }
-  }
-
-  // Launch URL
-  void _launchUrl(String url) async {
-    if (await canLaunch(url)) {
-      await launch(url);
-    } else {
-      Get.snackbar(
-        'Error',
-        'Could not open website',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    }
-  }
-
-  // Navigate to service
   void _navigateToService() {
-    Get.back();
+    // This would integrate with your navigation system
+    // For example: Get.toNamed('/navigation', arguments: {
+    //   'destination': LatLng(service.latitude, service.longitude),
+    //   'destinationName': service.name,
+    // });
 
-    // Get the navigation controller
-    final navigationController = Get.find<NavigationController>();
-
-    // Get current location
-    final currentLocation = _controller.currentLocation.value;
-    if (currentLocation == null) {
-      Get.snackbar(
-        'Error',
-        'Current location not available',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    // Get directions
-    navigationController.getDirections(
-      LatLng(currentLocation.latitude, currentLocation.longitude),
-      LatLng(service.latitude, service.longitude),
+    // For now, just center the map on the service
+    controller.mapController.value?.animateCamera(
+      CameraUpdate.newLatLngZoom(
+        LatLng(service.latitude, service.longitude),
+        16.0,
+      ),
     );
   }
 }
-

@@ -10,6 +10,7 @@ import '../features/authentication/controller/auth_controller.dart';
 import '../features/main/controller/botton_nav_controller.dart';
 import '../features/navigation/controller/navigation_controller.dart';
 import '../features/service_locator/controller/service_locator_controller.dart';
+import '../firebase_options.dart';
 import '../widgets/snackbar/custom_snackbar.dart';
 
 class InitialBinding extends Bindings {
@@ -42,12 +43,12 @@ class InitialBinding extends Bindings {
       );
 
       Get.put(
-          NavigationController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),
+          NavigationController(googleMapsApiKey: APIKeys.GGOOGLEMAPSAPIKEY),
           permanent: true
       );
 
       Get.put(
-          ServiceLocatorController(mapboxAccessToken: APIKeys.MAPBOXPUBLICTOKEN),
+          ServiceLocatorController(apiKey: APIKeys.GGOOGLEMAPSAPIKEY),
           permanent: true
       );
 

@@ -2,14 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import '../controller/navigation_controller.dart';
 import '../model/route_model.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import './location_marker_painter.dart';
-import 'dart:math' as math;
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -21,14 +19,16 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
   final NavigationController controller = Get.find<NavigationController>();
   late FlutterTts flutterTts;
-  bool _darkMode = true;
+  bool _darkMode = false;
   bool _showFullInstructions = false;
   bool _showSpeedLimit = true;
   bool _showLanes = true;
   bool _showTraffic = true;
   bool _followMode = true;
-  MapboxMapController? _mapboxController;
-  bool _mapInitialized = false;
+  GoogleMapController? mapController;
+  LatLng? currentLocation;
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
   Timer? _locationUpdateTimer;
 
   @override
@@ -36,6 +36,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeTTS();
+    _getCurrentLocation();
 
     // Check system brightness to set initial dark mode
     final brightness = MediaQuery.of(Get.context!).platformBrightness;
@@ -48,26 +49,45 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
       }
     });
 
-    // Start location updates
+    // Start location updates timer
     _startLocationUpdates();
   }
 
   void _startLocationUpdates() {
-    _locationUpdateTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      if (_mapboxController != null && controller.currentLocation.value != null) {
-        if (_followMode) {
-          _mapboxController!.animateCamera(
-            CameraUpdate.newLatLngZoom(
-              LatLng(
-                controller.currentLocation.value!.latitude,
-                controller.currentLocation.value!.longitude,
-              ),
-              16.0,
-            ),
-          );
-        }
+    _locationUpdateTimer = Timer.periodic(Duration(seconds: 2), (timer) {
+      _getCurrentLocation();
+      if (controller.isNavigating.value && _followMode) {
+        _updateCameraPosition();
       }
     });
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      setState(() {
+        currentLocation = LatLng(position.latitude, position.longitude);
+      });
+    } catch (e) {
+      DevLogs.logError('Error getting current location: $e');
+    }
+  }
+
+  void _updateCameraPosition() {
+    if (mapController != null && currentLocation != null) {
+      mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: currentLocation!,
+            zoom: 17.0,
+            tilt: 45.0,
+            bearing: controller.currentLocation.value?.heading ?? 0,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _initializeTTS() async {
@@ -87,9 +107,6 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     WidgetsBinding.instance.removeObserver(this);
     flutterTts.stop();
     _locationUpdateTimer?.cancel();
-    if (_mapboxController != null) {
-      _mapboxController!.dispose();
-    }
     super.dispose();
   }
 
@@ -100,24 +117,72 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     setState(() {
       _darkMode = brightness == Brightness.dark;
     });
-
-    // Update map style
     _updateMapStyle();
-
     super.didChangePlatformBrightness();
   }
 
   void _updateMapStyle() {
-    if (_mapboxController != null && _mapInitialized) {
-      try {
-        // String styleUrl = _darkMode
-        //     ? 'mapbox://styles/mapbox/navigation-night-v1'
-        //     : 'mapbox://styles/mapbox/navigation-day-v1';
-        // _mapboxController!.s(styleUrl);
-      } catch (e) {
-        DevLogs.logError('Error updating map style: $e');
-      }
-    }
+    if (mapController == null) return;
+
+    String mapStyle = _darkMode
+        ? '''
+        [
+          {
+            "elementType": "geometry",
+            "stylers": [
+              {
+                "color": "#242f3e"
+              }
+            ]
+          },
+          {
+            "elementType": "labels.text.fill",
+            "stylers": [
+              {
+                "color": "#746855"
+              }
+            ]
+          },
+          {
+            "elementType": "labels.text.stroke",
+            "stylers": [
+              {
+                "color": "#242f3e"
+              }
+            ]
+          },
+          {
+            "featureType": "road",
+            "elementType": "geometry",
+            "stylers": [
+              {
+                "color": "#38414e"
+              }
+            ]
+          },
+          {
+            "featureType": "road",
+            "elementType": "geometry.stroke",
+            "stylers": [
+              {
+                "color": "#212a37"
+              }
+            ]
+          },
+          {
+            "featureType": "road",
+            "elementType": "labels.text.fill",
+            "stylers": [
+              {
+                "color": "#9ca5b3"
+              }
+            ]
+          }
+        ]
+        '''
+        : '[]'; // Default style
+
+    mapController!.setMapStyle(mapStyle);
   }
 
   @override
@@ -128,58 +193,30 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           // Map
           Obx(() {
             if (controller.currentLocation.value == null) {
-              return Center(child: CircularProgressIndicator());
+              return const Center(child: CircularProgressIndicator());
             }
 
-            return MapboxMap(
-              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+            return GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   controller.currentLocation.value!.latitude,
                   controller.currentLocation.value!.longitude,
                 ),
                 zoom: 16.0,
-                tilt: 45.0,
-                bearing: controller.currentLocation.value!.heading.toDouble(),
               ),
-              onMapCreated: (MapboxMapController mapController) {
-                _mapboxController = mapController;
-                controller.setMapController(mapController);
-
-                // Delay to ensure map is fully initialized
-                Future.delayed(Duration(milliseconds: 500), () {
-                  setState(() {
-                    _mapInitialized = true;
-                  });
-
-                  // Set map style
-                  _updateMapStyle();
-
-                  // Draw route if we have one
-                  if (controller.currentRoute.value != null) {
-                    _drawRouteOnMap(mapController, controller.currentRoute.value!);
-                  }
-                });
+              onMapCreated: (GoogleMapController controller) {
+                mapController = controller;
+                _updateMapStyle();
               },
-              // Disable the built-in location tracking that's causing the crash
-              myLocationEnabled: false,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
               compassEnabled: true,
-            );
-          }),
-
-          // Add this inside the Stack in the build method, right after the MapboxMap
-          Obx(() {
-            if (controller.currentLocation.value == null) return SizedBox.shrink();
-
-            return Positioned(
-              child: CustomPaint(
-                painter: LocationMarkerPainter(
-                  bearing: controller.currentLocation.value!.heading.toDouble(),
-                ),
-                size: Size(30, 30),
-              ),
-              left: MediaQuery.of(context).size.width / 2 - 15,
-              top: MediaQuery.of(context).size.height / 2 - 15,
+              trafficEnabled: _showTraffic,
+              mapType: MapType.normal,
+              zoomControlsEnabled: false,
+              buildingsEnabled: true,
+              polylines: _polylines,
+              markers: _markers,
             );
           }),
 
@@ -203,10 +240,23 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 10,
-            child: CircleAvatar(
-              backgroundColor: Colors.white,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _darkMode ? Colors.black.withOpacity(0.7) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
               child: IconButton(
-                icon: Icon(Icons.close),
+                icon: Icon(
+                  Icons.close,
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
                 onPressed: () {
                   controller.stopNavigation();
                   Get.back();
@@ -219,10 +269,23 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             right: 10,
-            child: CircleAvatar(
-              backgroundColor: Colors.white,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _darkMode ? Colors.black.withOpacity(0.7) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
               child: IconButton(
-                icon: Icon(Icons.settings),
+                icon: Icon(
+                  Icons.settings,
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
                 onPressed: () {
                   _showSettingsBottomSheet();
                 },
@@ -230,20 +293,35 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
             ),
           ),
 
-          // Follow mode toggle button
+          // Center on location button
           Positioned(
-            bottom: MediaQuery.of(context).padding.bottom + 100,
+            bottom: 160,
             right: 10,
-            child: CircleAvatar(
-              backgroundColor: Colors.white,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _darkMode ? Colors.black.withOpacity(0.7) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
               child: IconButton(
-                icon: Icon(_followMode ? Icons.gps_fixed : Icons.gps_not_fixed),
+                icon: Icon(
+                  Icons.my_location,
+                  color: _followMode ? Colors.blue : (_darkMode ? Colors.white : Colors.black),
+                ),
                 onPressed: () {
                   setState(() {
                     _followMode = !_followMode;
                   });
+                  if (_followMode) {
+                    _updateCameraPosition();
+                  }
                 },
-                tooltip: _followMode ? 'Disable follow mode' : 'Enable follow mode',
               ),
             ),
           ),
@@ -255,7 +333,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   Widget _buildInstructionPanel() {
     return Obx(() {
       if (controller.currentRoute.value == null) {
-        return SizedBox.shrink();
+        return const SizedBox.shrink();
       }
 
       // Get current step
@@ -265,150 +343,154 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
       }
 
       if (currentStep == null) {
-        return SizedBox.shrink();
+        return const SizedBox.shrink();
       }
 
-      // Get next step if available
-      RouteStep? nextStep;
-      if (controller.currentStepIndex.value + 1 < controller.currentRoute.value!.steps.length) {
-        nextStep = controller.currentRoute.value!.steps[controller.currentStepIndex.value + 1];
-      }
-
-      return GestureDetector(
-        onTap: () {
-          setState(() {
-            _showFullInstructions = !_showFullInstructions;
-          });
-        },
-        child: Container(
-          color: _darkMode ? Colors.black.withValues(alpha: 0.8) : Colors.white,
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Current instruction
-              Row(
-                children: [
-                  _buildManeuverIcon(currentStep.maneuver),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          currentStep.instruction,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: _darkMode ? Colors.white : Colors.black,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          _formatDistance(currentStep.distance),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _darkMode ? Colors.white70 : Colors.black54,
-                          ),
-                        ),
-                      ],
+      return Container(
+        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: _darkMode ? Colors.black.withOpacity(0.8) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _getManeuverIcon(currentStep.maneuver),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    currentStep.instruction,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _darkMode ? Colors.white : Colors.black,
                     ),
-                  ),
-                ],
-              ),
-
-              // Next instruction (if available and expanded view)
-              if (_showFullInstructions && nextStep != null) ...[
-                Divider(color: _darkMode ? Colors.white24 : Colors.black12),
-                Padding(
-                  padding: EdgeInsets.only(left: 40),
-                  child: Row(
-                    children: [
-                      _buildManeuverIcon(nextStep.maneuver, size: 24),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Then ${nextStep.instruction}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: _darkMode ? Colors.white70 : Colors.black54,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              _formatDistance(nextStep.distance),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _darkMode ? Colors.white54 : Colors.black38,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ],
-
-              // Show full route summary if expanded
-              if (_showFullInstructions) ...[
-                Divider(color: _darkMode ? Colors.white24 : Colors.black12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            ),
+            SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _formatDistance(currentStep.distance),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _darkMode ? Colors.white70 : Colors.black54,
+                  ),
+                ),
+                Text(
+                  _formatDuration(currentStep.duration),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _darkMode ? Colors.white70 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+            if (_showFullInstructions && controller.currentStepIndex.value < controller.currentRoute.value!.steps.length - 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
                   children: [
-                    Text(
-                      'Arrival: ${_formatTime(DateTime.now().add(Duration(seconds: controller.remainingDuration.value.toInt())))}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _darkMode ? Colors.white70 : Colors.black54,
-                      ),
+                    Icon(
+                      Icons.arrow_forward,
+                      size: 16,
+                      color: _darkMode ? Colors.white70 : Colors.black54,
                     ),
-                    Text(
-                      'Remaining: ${_formatDuration(controller.remainingDuration.value)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _darkMode ? Colors.white70 : Colors.black54,
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Next: ${controller.currentRoute.value!.steps[controller.currentStepIndex.value + 1].instruction}",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _darkMode ? Colors.white70 : Colors.black54,
+                        ),
                       ),
                     ),
                   ],
                 ),
+              ),
+          ],
+        ),
+      );
+    });
+  }
 
-                // Show speed limit if enabled
-                if (_showSpeedLimit) ...[
-                  SizedBox(height: 8),
-                  Row(
+  Widget _buildBottomControls() {
+    return Container(
+      margin: EdgeInsets.all(16).copyWith(bottom: MediaQuery.of(context).padding.bottom + 16),
+      decoration: BoxDecoration(
+        color: _darkMode ? Colors.black.withOpacity(0.8) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ETA and distance
+          Obx(() {
+            if (controller.currentRoute.value == null) {
+              return SizedBox.shrink();
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.red,
-                            width: 2,
-                          ),
-                        ),
-                        child: Text(
-                          '60', // This would be dynamic in a real app
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
                       Text(
-                        'Speed limit',
+                        'ETA',
                         style: TextStyle(
+                          fontSize: 12,
                           color: _darkMode ? Colors.white70 : Colors.black54,
                         ),
                       ),
-                      Spacer(),
                       Text(
-                        '55 km/h', // Current speed would be dynamic
+                        _formatETA(controller.remainingDuration.value),
                         style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: _darkMode ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Remaining',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _darkMode ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                      Text(
+                        _formatDistance(controller.remainingDistance.value),
+                        style: TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: _darkMode ? Colors.white : Colors.black,
                         ),
@@ -416,89 +498,65 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                     ],
                   ),
                 ],
+              ),
+            );
+          }),
 
-                // Show lane guidance if enabled
-                if (_showLanes && currentStep.maneuver == 'turn') ...[
-                  SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildLaneGuidance(true),
-                      _buildLaneGuidance(true),
-                      _buildLaneGuidance(false),
-                      _buildLaneGuidance(false),
-                    ],
-                  ),
-                ],
-              ],
+          Divider(color: _darkMode ? Colors.white24 : Colors.black12),
+
+          // Control buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildControlButton(
+                icon: Icons.volume_up,
+                label: controller.voiceGuidanceEnabled.value ? 'Voice On' : 'Voice Off',
+                onTap: () {
+                  controller.toggleVoiceGuidance();
+                },
+                isActive: controller.voiceGuidanceEnabled.value,
+              ),
+              _buildControlButton(
+                icon: Icons.dark_mode,
+                label: _darkMode ? 'Dark Mode' : 'Light Mode',
+                onTap: () {
+                  setState(() {
+                    _darkMode = !_darkMode;
+                    _updateMapStyle();
+                  });
+                },
+                isActive: _darkMode,
+              ),
+              _buildControlButton(
+                icon: Icons.traffic,
+                label: _showTraffic ? 'Traffic On' : 'Traffic Off',
+                onTap: () {
+                  setState(() {
+                    _showTraffic = !_showTraffic;
+                  });
+                  if (mapController != null) {
+                   // mapController!.setTrafficEnabled(_showTraffic);
+                  }
+                },
+                isActive: _showTraffic,
+              ),
+              _buildControlButton(
+                icon: Icons.list,
+                label: 'Steps',
+                onTap: () {
+                  _showStepsBottomSheet();
+                },
+              ),
+              _buildControlButton(
+                icon: Icons.stop,
+                label: 'End',
+                onTap: () {
+                  controller.stopNavigation();
+                  Get.back();
+                },
+                color: Colors.red,
+              ),
             ],
-          ),
-        ),
-      );
-    });
-  }
-
-  Widget _buildLaneGuidance(bool isRecommended) {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 4),
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: isRecommended
-            ? (_darkMode ? Colors.blue : Colors.blue[700])
-            : (_darkMode ? Colors.grey[800] : Colors.grey[300]),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Icon(
-        Icons.arrow_upward,
-        color: isRecommended ? Colors.white : (_darkMode ? Colors.white54 : Colors.black54),
-      ),
-    );
-  }
-
-  Widget _buildBottomControls() {
-    return Container(
-      color: _darkMode ? Colors.black.withValues(alpha: 0.8) : Colors.white,
-      padding: EdgeInsets.all(16).copyWith(bottom: MediaQuery.of(context).padding.bottom + 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildControlButton(
-            icon: Icons.volume_up,
-            label: 'Sound',
-            onTap: () {
-              controller.toggleVoiceGuidance();
-              Get.snackbar(
-                'Voice Guidance',
-                controller.voiceGuidanceEnabled.value ? 'Enabled' : 'Disabled',
-                snackPosition: SnackPosition.BOTTOM,
-              );
-            },
-          ),
-          _buildControlButton(
-            icon: Icons.dark_mode,
-            label: 'Dark Mode',
-            onTap: () {
-              setState(() {
-                _darkMode = !_darkMode;
-              });
-              _updateMapStyle();
-            },
-          ),
-          _buildControlButton(
-            icon: Icons.list,
-            label: 'Steps',
-            onTap: () {
-              _showStepsBottomSheet();
-            },
-          ),
-          _buildControlButton(
-            icon: Icons.stop,
-            label: 'End',
-            onTap: () {
-              controller.stopNavigation();
-              Get.back();
-            },
           ),
         ],
       ),
@@ -509,92 +567,72 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    Color? color,
+    bool isActive = false,
   }) {
     return InkWell(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            color: _darkMode ? Colors.white : Colors.black,
-          ),
-          SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: _darkMode ? Colors.white : Colors.black,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: color ?? (isActive
+                  ? Colors.blue
+                  : (_darkMode ? Colors.white : Colors.black)),
+              size: 24,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildManeuverIcon(String maneuver, {double size = 36}) {
-    IconData iconData;
-
-    switch (maneuver) {
-      case 'turn':
-        iconData = Icons.turn_right;
-        break;
-      case 'straight':
-        iconData = Icons.straight;
-        break;
-      case 'merge':
-        iconData = Icons.merge_type;
-        break;
-      case 'ramp':
-        iconData = Icons.exit_to_app;
-        break;
-      case 'fork':
-        iconData = Icons.call_split;
-        break;
-      case 'roundabout':
-        iconData = Icons.roundabout_left;
-        break;
-      case 'arrive':
-        iconData = Icons.place;
-        break;
-      default:
-        iconData = Icons.arrow_forward;
-    }
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.blue,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        iconData,
-        color: Colors.white,
-        size: size * 0.6,
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: color ?? (isActive
+                    ? Colors.blue
+                    : (_darkMode ? Colors.white : Colors.black)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showStepsBottomSheet() {
-    if (controller.currentRoute.value == null) return;
-
     Get.bottomSheet(
       Container(
-        color: _darkMode ? Colors.black : Colors.white,
-        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _darkMode ? Colors.grey[900] : Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Route Steps',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Route Steps',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: _darkMode ? Colors.white : Colors.black,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.close,
+                    color: _darkMode ? Colors.white : Colors.black,
+                  ),
+                  onPressed: () => Get.back(),
+                ),
+              ],
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Expanded(
               child: ListView.builder(
                 itemCount: controller.currentRoute.value!.steps.length,
@@ -602,37 +640,74 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   RouteStep step = controller.currentRoute.value!.steps[index];
                   bool isCurrentStep = index == controller.currentStepIndex.value;
 
-                  return ListTile(
-                    leading: _buildManeuverIcon(
-                      step.maneuver,
-                      size: 24,
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: isCurrentStep
+                          ? (_darkMode ? Colors.blue.withOpacity(0.2) : Colors.blue.withOpacity(0.1))
+                          : (_darkMode ? Colors.grey[800] : Colors.grey[100]),
+                      borderRadius: BorderRadius.circular(12),
+                      border: isCurrentStep
+                          ? Border.all(color: Colors.blue, width: 2)
+                          : null,
                     ),
-                    title: Text(
-                      step.instruction,
-                      style: TextStyle(
-                        color: _darkMode ? Colors.white : Colors.black,
-                        fontWeight: isCurrentStep ? FontWeight.bold : FontWeight.normal,
-                      ),
+                    padding: EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: isCurrentStep ? Colors.blue : (_darkMode ? Colors.grey[700] : Colors.grey[300]),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: isCurrentStep ? Colors.white : (_darkMode ? Colors.white : Colors.black),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                step.instruction,
+                                style: TextStyle(
+                                  color: _darkMode ? Colors.white : Colors.black,
+                                  fontWeight: isCurrentStep ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Text(
+                                    _formatDistance(step.distance),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _darkMode ? Colors.white70 : Colors.black54,
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    _formatDuration(step.duration),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _darkMode ? Colors.white70 : Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    subtitle: Text(
-                      _formatDistance(step.distance),
-                      style: TextStyle(
-                        color: _darkMode ? Colors.white70 : Colors.black54,
-                      ),
-                    ),
-                    tileColor: isCurrentStep
-                        ? (_darkMode ? Colors.blue.withValues(alpha: .2) : Colors.blue.withValues(alpha: 0.1))
-                        : null,
-                    onTap: () {
-                      // Optionally allow jumping to a step for preview
-                      controller.currentStepIndex.value = index;
-                      Get.back();
-
-                      // Speak the instruction when tapped
-                      if (controller.voiceGuidanceEnabled.value) {
-                        _speakInstruction(step.instruction);
-                      }
-                    },
                   );
                 },
               ),
@@ -640,14 +715,19 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           ],
         ),
       ),
+      isScrollControlled: true,
+      ignoreSafeArea: false,
     );
   }
 
   void _showSettingsBottomSheet() {
     Get.bottomSheet(
       Container(
-        color: _darkMode ? Colors.black : Colors.white,
-        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _darkMode ? Colors.grey[900] : Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -655,133 +735,104 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
             Text(
               'Navigation Settings',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: _darkMode ? Colors.white : Colors.black,
               ),
             ),
             SizedBox(height: 16),
-            ListTile(
-              leading: Icon(
-                Icons.dark_mode,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
+            SwitchListTile(
               title: Text(
                 'Dark Mode',
                 style: TextStyle(
                   color: _darkMode ? Colors.white : Colors.black,
                 ),
               ),
-              trailing: Switch(
-                value: _darkMode,
-                onChanged: (value) {
-                  setState(() {
-                    _darkMode = value;
-                  });
+              value: _darkMode,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                setState(() {
+                  _darkMode = value;
                   _updateMapStyle();
-                  Get.back();
-                },
-              ),
+                });
+                Get.back();
+              },
             ),
-            ListTile(
-              leading: Icon(
-                Icons.volume_up,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
+            SwitchListTile(
               title: Text(
                 'Voice Guidance',
                 style: TextStyle(
                   color: _darkMode ? Colors.white : Colors.black,
                 ),
               ),
-              trailing: Obx(() => Switch(
-                value: controller.voiceGuidanceEnabled.value,
-                onChanged: (value) {
-                  controller.toggleVoiceGuidance();
-                  if (value && controller.currentInstruction.value.isNotEmpty) {
-                    _speakInstruction(controller.currentInstruction.value);
-                  } else if (!value) {
-                    flutterTts.stop();
-                  }
-                },
-              )),
+              value: controller.voiceGuidanceEnabled.value,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                controller.toggleVoiceGuidance();
+              },
             ),
-            ListTile(
-              leading: Icon(
-                Icons.speed,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
-              title: Text(
-                'Speed Limit Alerts',
-                style: TextStyle(
-                  color: _darkMode ? Colors.white : Colors.black,
-                ),
-              ),
-              trailing: Switch(
-                value: _showSpeedLimit,
-                onChanged: (value) {
-                  setState(() {
-                    _showSpeedLimit = value;
-                  });
-                },
-              ),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.traffic,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
+            SwitchListTile(
               title: Text(
                 'Show Traffic',
                 style: TextStyle(
                   color: _darkMode ? Colors.white : Colors.black,
                 ),
               ),
-              trailing: Switch(
-                value: _showTraffic,
-                onChanged: (value) {
-                  setState(() {
-                    _showTraffic = value;
-                  });
-                  if (_mapboxController != null && _mapInitialized) {
-                    try {
-                      // _mapboxController!.setLayerVisibility("traffic", _showTraffic);
-                    } catch (e) {
-                      DevLogs.logError('Error toggling traffic layer: $e');
-                    }
-                  }
-                },
-              ),
+              value: _showTraffic,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                setState(() {
+                  _showTraffic = value;
+                });
+                if (mapController != null) {
+                 // mapController!.setTrafficEnabled(_showTraffic);
+                }
+              },
             ),
-            ListTile(
-              leading: Icon(
-                Icons.call_split,
-                color: _darkMode ? Colors.white : Colors.black,
-              ),
+            SwitchListTile(
               title: Text(
-                'Lane Guidance',
+                'Show Speed Limit',
                 style: TextStyle(
                   color: _darkMode ? Colors.white : Colors.black,
                 ),
               ),
-              trailing: Switch(
-                value: _showLanes,
-                onChanged: (value) {
-                  setState(() {
-                    _showLanes = value;
-                  });
-                },
-              ),
+              value: _showSpeedLimit,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                setState(() {
+                  _showSpeedLimit = value;
+                });
+              },
             ),
-            SizedBox(height: 16),
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  controller.simulateNavigation();
-                  Get.back();
-                },
-                child: Text('Simulate Navigation'),
+            SwitchListTile(
+              title: Text(
+                'Show Lane Guidance',
+                style: TextStyle(
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
               ),
+              value: _showLanes,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                setState(() {
+                  _showLanes = value;
+                });
+              },
+            ),
+            SwitchListTile(
+              title: Text(
+                'Show Next Instruction',
+                style: TextStyle(
+                  color: _darkMode ? Colors.white : Colors.black,
+                ),
+              ),
+              value: _showFullInstructions,
+              activeColor: Colors.blue,
+              onChanged: (value) {
+                setState(() {
+                  _showFullInstructions = value;
+                });
+              },
             ),
           ],
         ),
@@ -789,82 +840,67 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     );
   }
 
-  void _drawRouteOnMap(MapboxMapController mapController, NavigationRoute route) {
-    try {
-      // Clear previous routes
-      mapController.clearLines();
+  Widget _getManeuverIcon(String maneuver) {
+    IconData iconData;
 
-      // Decode polyline
-      List<LatLng> points = _decodePolyline(route.geometry);
-
-      if (points.isEmpty) {
-        DevLogs.logError('No points to draw route');
-        return;
-      }
-
-      // Add line
-      mapController.addLine(
-        LineOptions(
-          geometry: points,
-          lineColor: "#3887be",
-          lineWidth: 5.0,
-          lineOpacity: 0.8,
-        ),
-      );
-
-      // Add destination marker
-      mapController.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(route.endLatitude, route.endLongitude),
-          iconImage: "marker-15", // Use a default Mapbox icon
-          iconSize: 1.5,
-        ),
-      );
-    } catch (e) {
-      DevLogs.logError('Error drawing route on map: $e');
+    switch (maneuver) {
+      case 'turn-right':
+        iconData = Icons.turn_right;
+        break;
+      case 'turn-left':
+        iconData = Icons.turn_left;
+        break;
+      case 'turn-slight-right':
+        iconData = Icons.turn_slight_right;
+        break;
+      case 'turn-slight-left':
+        iconData = Icons.turn_slight_left;
+        break;
+      case 'turn-sharp-right':
+        iconData = Icons.turn_sharp_right;
+        break;
+      case 'turn-sharp-left':
+        iconData = Icons.turn_sharp_left;
+        break;
+      case 'uturn-right':
+      case 'uturn-left':
+        iconData = Icons.u_turn_right;
+        break;
+      case 'roundabout-right':
+      case 'roundabout-left':
+        iconData = Icons.roundabout_right;
+        break;
+      case 'merge':
+        iconData = Icons.merge;
+        break;
+      case 'fork-right':
+      case 'fork-left':
+        iconData = Icons.fork_right;
+        break;
+      case 'straight':
+        iconData = Icons.straight;
+        break;
+      case 'ramp-right':
+      case 'ramp-left':
+        iconData = Icons.exit_to_app;
+        break;
+      default:
+        iconData = Icons.arrow_forward;
     }
-  }
 
-  List<LatLng> _decodePolyline(String encoded) {
-    if (encoded.isEmpty) return [];
-
-    try {
-      List<LatLng> points = [];
-      int index = 0, len = encoded.length;
-      int lat = 0, lng = 0;
-
-      while (index < len) {
-        int b, shift = 0, result = 0;
-
-        do {
-          b = encoded.codeUnitAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20);
-
-        int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-        lat += dlat;
-
-        shift = 0;
-        result = 0;
-
-        do {
-          b = encoded.codeUnitAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20);
-
-        int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-        lng += dlng;
-
-        points.add(LatLng(lat / 1E6, lng / 1E6));
-      }
-
-      return points;
-    } catch (e) {
-      DevLogs.logError('Error decoding polyline: $e');
-      return [];
-    }
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.blue,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        iconData,
+        color: Colors.white,
+        size: 24,
+      ),
+    );
   }
 
   String _formatDistance(double distance) {
@@ -877,17 +913,25 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
   String _formatDuration(double seconds) {
     int minutes = (seconds / 60).floor();
-    int hours = (minutes / 60).floor();
-    minutes = minutes % 60;
-
-    if (hours > 0) {
-      return '$hours h $minutes min';
-    } else {
+    if (minutes < 60) {
       return '$minutes min';
+    } else {
+      int hours = (minutes / 60).floor();
+      minutes = minutes % 60;
+      return '$hours h ${minutes > 0 ? '$minutes min' : ''}';
     }
   }
 
-  String _formatTime(DateTime time) {
-    return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+  String _formatETA(double remainingSeconds) {
+    final now = DateTime.now();
+    final eta = now.add(Duration(seconds: remainingSeconds.toInt()));
+
+    final hour = eta.hour;
+    final minute = eta.minute;
+
+    final formattedHour = hour > 12 ? hour - 12 : hour;
+    final period = hour >= 12 ? 'PM' : 'AM';
+
+    return '${formattedHour == 0 ? 12 : formattedHour}:${minute.toString().padLeft(2, '0')} $period';
   }
 }

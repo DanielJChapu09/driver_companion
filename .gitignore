@@ -33,6 +33,7 @@ migrate_working_dir/
 .pub/
 /build/
 /lib/firebase_options.dart
+/lib/config/confidential/apikeys.dart
 
 # Symbolication related
 app.*.symbols

@@ -1,19 +1,20 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
-import 'package:latlong2/latlong.dart' as latlong2;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/config/theme/app_colors.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
+import 'package:mymaptest/firebase_options.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
 import '../../driver_behaviour/controller/driver_behaviour_controller.dart';
+import '../../navigation/model/route_model.dart';
 import '../../navigation/model/search_result_model.dart';
+import '../../navigation/service/googlemaps_service.dart';
 import '../../navigation/view/navigation_screen.dart';
 import '../../navigation/view/saved_places_screen.dart';
 import '../../navigation/view/search_screen.dart';
@@ -28,14 +29,19 @@ class MapsTab extends StatefulWidget {
 class _MapsTabState extends State<MapsTab> {
   final NavigationController controller = Get.find<NavigationController>();
   final DriverBehaviorController behaviorController = Get.find<DriverBehaviorController>();
-  final MapController _mapController = MapController();
-  late MapboxMapController _mapboxMapController;
+  GoogleMapController? mapController;
+  final LatLng _initialCameraPosition = const LatLng(37.77483, -122.41942); // San Francisco
   bool _isLoadingDestination = false;
   SearchResult? _selectedDestination;
   bool _isInitialized = false;
-  Symbol? _destinationMarker;
-  Line? _routeLine;
+  Marker? _destinationMarker;
+  Polyline? _routeLine;
   bool _showingRoutePreview = false;
+  final GoogleMapsService _googleMapsService = GoogleMapsService(apiKey: APIKeys.GGOOGLEMAPSAPIKEY);
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
+  bool _showTraffic = false;
+  bool _darkMode = false;
 
   @override
   void initState() {
@@ -55,8 +61,8 @@ class _MapsTabState extends State<MapsTab> {
   Future<void> _getCurrentLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
         ),
       );
       controller.currentLocation.value = position;
@@ -73,108 +79,31 @@ class _MapsTabState extends State<MapsTab> {
           // Map
           Obx(() {
             if (controller.currentLocation.value == null) {
-              return Center(child: CircularProgressIndicator());
+              return const Center(child: CircularProgressIndicator());
             }
 
-            return FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: latlong2.LatLng(
+            return GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(
                   controller.currentLocation.value!.latitude,
                   controller.currentLocation.value!.longitude,
                 ),
-                initialZoom: 16,
-                maxZoom: 40,
-                minZoom: 0,
-
-                onTap: (tapPosition, point) {
-                  _handleMapTap(coordinates: LatLng(point.latitude, point.longitude));
-                },
-
+                zoom: 16.0,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${APIKeys.MAPBOXPUBLICTOKEN}',
-                  additionalOptions: {
-                    'accessToken': APIKeys.MAPBOXPUBLICTOKEN
-                  },
-                ),
-
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      width: 20,
-                      height: 20,
-                      point: latlong2.LatLng(controller.currentLocation.value!.latitude, controller.currentLocation.value!.longitude),
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color:
-                          Colors.green.withOpacity(0.5),
-                          borderRadius:
-                          BorderRadius.circular(
-                              20),
-                        ),
-                        child: Center(
-                          child: Stack(
-                            children: [
-                              Container(
-                                width: 12,
-                                height:12,
-                                decoration: BoxDecoration(
-                                    color: AppColors.blue,
-                                    borderRadius:
-                                    BorderRadius.circular(20),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.blue
-                                            .withValues(alpha: 0.5),
-                                        spreadRadius: 2,
-                                        blurRadius: 4,
-                                        offset:
-                                        const Offset(
-                                            0, 3),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 1,
-                                    )),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    if(_selectedDestination != null) Marker(
-                      width: 20,
-                      height: 20,
-                      point: latlong2.LatLng(_selectedDestination!.latitude, _selectedDestination!.longitude),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.orange,
-                        size: 50,
-                      ),
-                    ),
-                  ],
-                ),
-
-
-                if (controller.previewRoutePoints.value.isNotEmpty)
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: controller.previewRoutePoints.value,
-                        // points: controller.currentRoute.value!.steps.map((step) => latlong2.LatLng(step.startLatitude, step.startLongitude)).toList(),
-                        strokeWidth: 4.0,
-                        color: AppColors.blue,
-                      ),
-                    ],
-                  ),
-              ],
-
+              onMapCreated: (GoogleMapController controller) {
+                mapController = controller;
+              },
+              myLocationEnabled: true,
+              compassEnabled: true,
+              markers: _markers,
+              polylines: _polylines,
+              onTap: (coordinates) {
+                _handleMapTap(coordinates);
+              },
+              trafficEnabled: _showTraffic,
+              mapType: MapType.normal,
+              zoomControlsEnabled: false,
+              buildingsEnabled: true,
             );
           }),
 
@@ -182,7 +111,7 @@ class _MapsTabState extends State<MapsTab> {
           if (_isLoadingDestination)
             Container(
               color: Colors.black.withOpacity(0.3),
-              child: Center(
+              child: const Center(
                 child: CircularProgressIndicator(),
               ),
             ),
@@ -196,7 +125,7 @@ class _MapsTabState extends State<MapsTab> {
               onTap: () => Get.toNamed(Routes.searchScreen),
               child: Container(
                 height: 50,
-                padding: EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
@@ -204,14 +133,14 @@ class _MapsTabState extends State<MapsTab> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
                       blurRadius: 10,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.search, color: Colors.grey),
-                    SizedBox(width: 10),
+                    const Icon(Icons.search, color: Colors.grey),
+                    const SizedBox(width: 10),
                     Text(
                       'Search for a destination',
                       style: TextStyle(
@@ -237,27 +166,29 @@ class _MapsTabState extends State<MapsTab> {
                   heroTag: 'locationButton',
                   mini: true,
                   onPressed: () {
-                    if (controller.mapController.value != null && controller.currentLocation.value != null) {
-                      controller.mapController.value!.animateCamera(
-                        CameraUpdate.newLatLngZoom(
-                          LatLng(
-                            controller.currentLocation.value!.latitude,
-                            controller.currentLocation.value!.longitude,
+                    if (mapController != null && controller.currentLocation.value != null) {
+                      mapController!.animateCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: LatLng(
+                              controller.currentLocation.value!.latitude,
+                              controller.currentLocation.value!.longitude,
+                            ),
+                            zoom: 16.0,
                           ),
-                          16.0,
                         ),
                       );
                     }
                   },
-                  child: Icon(Icons.my_location),
+                  child: const Icon(Icons.my_location),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 // Saved places button
                 FloatingActionButton(
                   heroTag: 'placesButton',
                   mini: true,
                   onPressed: () => Get.toNamed(Routes.savedPlacesScreen),
-                  child: Icon(Icons.star),
+                  child: const Icon(Icons.star),
                 ),
               ],
             ),
@@ -272,7 +203,6 @@ class _MapsTabState extends State<MapsTab> {
               child: _buildRoutePreviewCard(),
             ),
 
-
           // Continue navigation button (only shown when navigating)
           Obx(() {
             if (controller.isNavigating.value) {
@@ -283,26 +213,26 @@ class _MapsTabState extends State<MapsTab> {
                 child: ElevatedButton(
                   onPressed: () => Get.toNamed(Routes.navigationScreen),
                   style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                     backgroundColor: Colors.green,
                   ),
-                  child: Text(
+                  child: const Text(
                     'Continue Navigation',
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
               );
             }
-            return SizedBox.shrink();
+            return const SizedBox.shrink();
           }),
 
           // Route Preview Panel
           Obx(() {
-            if (controller.currentRoute.value == null) return SizedBox();
-            return _showingRoutePreview ? _buildRoutePreviewPanel() : SizedBox();
+            if (controller.currentRoute.value == null) return const SizedBox();
+            return _showingRoutePreview ? _buildRoutePreviewPanel() : const SizedBox();
           }),
 
           // Driver Behavior Status
@@ -317,7 +247,7 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   // Handle map tap to select destination
-  void _handleMapTap({required LatLng coordinates}) async {
+  void _handleMapTap(LatLng coordinates) async {
     // Don't process taps if already loading or navigating
     if (_isLoadingDestination || controller.isNavigating.value) return;
 
@@ -328,24 +258,25 @@ class _MapsTabState extends State<MapsTab> {
 
     try {
       // Clear previous routes and markers
-      if (controller.mapController.value != null) {
-        controller.mapController.value!.clearSymbols();
-        controller.mapController.value!.clearLines();
-      }
+      setState(() {
+        _markers.clear();
+        _polylines.clear();
+      });
 
       // Add destination marker
-      if (controller.mapController.value != null) {
-        controller.mapController.value!.addSymbol(
-          SymbolOptions(
-            geometry: coordinates,
-            iconImage: "marker-end",
-            iconSize: 1.5,
-          ),
-        );
-      }
+      _destinationMarker = Marker(
+        markerId: const MarkerId('destination'),
+        position: coordinates,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      );
+
+      // Update markers
+      setState(() {
+        _markers.add(_destinationMarker!);
+      });
 
       // Reverse geocode to get address
-      SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+      SearchResult? result = await _googleMapsService.reverseGeocode(coordinates);
 
       if (result != null) {
         setState(() {
@@ -354,25 +285,13 @@ class _MapsTabState extends State<MapsTab> {
 
         // Get directions to this location
         if (controller.currentLocation.value != null) {
-
-          await controller.getRoutePreview(
-              latlong2.LatLng(
-                controller.currentLocation.value!.latitude,
-                controller.currentLocation.value!.longitude,
-              ),
-              latlong2.LatLng(
-                coordinates.latitude,
-                coordinates.longitude,
-              )
-          ).then((value) async{
-            await controller.getDirections(
-              LatLng(
-                controller.currentLocation.value!.latitude,
-                controller.currentLocation.value!.longitude,
-              ),
-              LatLng(coordinates.latitude, coordinates.longitude),
-            );
-          });
+          await getDirections(
+            LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            LatLng(coordinates.latitude, coordinates.longitude),
+          );
         }
       } else {
         CustomSnackBar.showErrorSnackbar(
@@ -382,7 +301,7 @@ class _MapsTabState extends State<MapsTab> {
     } catch (e) {
       DevLogs.logError('Error handling map tap: $e');
       CustomSnackBar.showErrorSnackbar(
-        message:'Failed to process location',
+        message: 'Failed to process location',
       );
     } finally {
       setState(() {
@@ -394,7 +313,7 @@ class _MapsTabState extends State<MapsTab> {
   // Build route preview card
   Widget _buildRoutePreviewCard() {
     if (_selectedDestination == null || controller.currentRoute.value == null) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
 
     final route = controller.currentRoute.value!;
@@ -405,7 +324,7 @@ class _MapsTabState extends State<MapsTab> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -413,7 +332,7 @@ class _MapsTabState extends State<MapsTab> {
             // Destination name
             Text(
               _selectedDestination!.name,
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
@@ -432,7 +351,7 @@ class _MapsTabState extends State<MapsTab> {
               overflow: TextOverflow.ellipsis,
             ),
 
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
 
             // Route info
             Row(
@@ -441,11 +360,11 @@ class _MapsTabState extends State<MapsTab> {
                 // Distance
                 Row(
                   children: [
-                    Icon(Icons.directions_car, size: 16, color: AppColors.blue),
-                    SizedBox(width: 4),
+                    const Icon(Icons.directions_car, size: 16, color: AppColors.blue),
+                    const SizedBox(width: 4),
                     Text(
                       _formatDistance(route.distance),
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -453,11 +372,11 @@ class _MapsTabState extends State<MapsTab> {
                 // Duration
                 Row(
                   children: [
-                    Icon(Icons.access_time, size: 16, color: AppColors.blue),
-                    SizedBox(width: 4),
+                    const Icon(Icons.access_time, size: 16, color: AppColors.blue),
+                    const SizedBox(width: 4),
                     Text(
                       _formatDuration(route.duration),
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -465,18 +384,18 @@ class _MapsTabState extends State<MapsTab> {
                 // ETA
                 Row(
                   children: [
-                    Icon(Icons.flag, size: 16, color: Colors.green),
-                    SizedBox(width: 4),
+                    const Icon(Icons.flag, size: 16, color: Colors.green),
+                    const SizedBox(width: 4),
                     Text(
                       _formatETA(route.duration),
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
               ],
             ),
 
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Action buttons
             Row(
@@ -486,8 +405,8 @@ class _MapsTabState extends State<MapsTab> {
                   onPressed: () {
                     _showSavePlaceDialog(_selectedDestination!);
                   },
-                  icon: Icon(Icons.star_border),
-                  label: Text('Save'),
+                  icon: const Icon(Icons.star_border),
+                  label: const Text('Save'),
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -495,27 +414,22 @@ class _MapsTabState extends State<MapsTab> {
                   ),
                 ),
 
-
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
 
                 // Close button
                 IconButton(
                   onPressed: () {
                     setState(() {
                       _selectedDestination = null;
+                      _markers.clear();
+                      _polylines.clear();
                     });
                     controller.currentRoute.value = null;
-
-                    // Clear map
-                    if (controller.mapController.value != null) {
-                      controller.mapController.value!.clearSymbols();
-                      controller.mapController.value!.clearLines();
-                    }
                   },
-                  icon: Icon(Icons.close),
+                  icon: const Icon(Icons.close),
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.grey[200],
-                    shape: CircleBorder(),
+                    shape: const CircleBorder(),
                   ),
                 ),
               ],
@@ -526,8 +440,8 @@ class _MapsTabState extends State<MapsTab> {
                 controller.startNavigation();
                 Get.toNamed(Routes.navigationScreen);
               },
-              icon: Icon(Icons.navigation),
-              label: Text('Start'),
+              icon: const Icon(Icons.navigation),
+              label: const Text('Start'),
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -547,21 +461,21 @@ class _MapsTabState extends State<MapsTab> {
 
     Get.dialog(
       AlertDialog(
-        title: Text('Save Place'),
+        title: const Text('Save Place'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Name',
                 border: OutlineInputBorder(),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: selectedCategory,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Category',
                 border: OutlineInputBorder(),
               ),
@@ -574,7 +488,7 @@ class _MapsTabState extends State<MapsTab> {
                         category['icon'].codePointAt(0),
                         fontFamily: 'MaterialIcons',
                       )),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(category['name']),
                     ],
                   ),
@@ -589,7 +503,7 @@ class _MapsTabState extends State<MapsTab> {
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -602,7 +516,7 @@ class _MapsTabState extends State<MapsTab> {
               );
               Get.back();
             },
-            child: Text('Save'),
+            child: const Text('Save'),
           ),
         ],
       ),
@@ -669,55 +583,55 @@ class _MapsTabState extends State<MapsTab> {
         elevation: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 route.endAddress.isEmpty ? 'Destination' : route.endAddress,
-                style: TextStyle(
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.directions_car, size: 20, color: Colors.blue),
-                  SizedBox(width: 8),
+                  const Icon(Icons.directions_car, size: 20, color: Colors.blue),
+                  const SizedBox(width: 8),
                   Text(
                     distance,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                     ),
                   ),
-                  SizedBox(width: 16),
-                  Icon(Icons.access_time, size: 20, color: Colors.blue),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 16),
+                  const Icon(Icons.access_time, size: 20, color: Colors.blue),
+                  const SizedBox(width: 8),
                   Text(
                     duration,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   TextButton.icon(
-                    icon: Icon(Icons.favorite_border),
-                    label: Text('Save'),
+                    icon: const Icon(Icons.favorite_border),
+                    label: const Text('Save'),
                     onPressed: () {
                       _saveDestination();
                     },
                   ),
                   ElevatedButton.icon(
-                    icon: Icon(Icons.navigation),
-                    label: Text('Start Navigation'),
+                    icon: const Icon(Icons.navigation),
+                    label: const Text('Start Navigation'),
                     onPressed: () {
                       _startNavigation();
                     },
@@ -730,8 +644,8 @@ class _MapsTabState extends State<MapsTab> {
                     ),
                   ),
                   TextButton.icon(
-                    icon: Icon(Icons.close),
-                    label: Text('Cancel'),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Cancel'),
                     onPressed: () {
                       _cancelRoutePreview();
                     },
@@ -750,7 +664,7 @@ class _MapsTabState extends State<MapsTab> {
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -763,7 +677,7 @@ class _MapsTabState extends State<MapsTab> {
                   : Colors.grey,
               size: 20,
             ),
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Text(
               behaviorController.isMonitoring.value
                   ? 'Monitoring Active'
@@ -782,42 +696,11 @@ class _MapsTabState extends State<MapsTab> {
     );
   }
 
-  void _onMapCreated(MapboxMapController controller) {
-    _mapboxMapController = controller;
-    this.controller.setMapController(controller);
+  void _onMapCreated(GoogleMapController controller) {
+    mapController = controller;
     setState(() {
       _isInitialized = true;
     });
-  }
-
-  void _onMapLongClick(Point<double> point, LatLng coordinates) async {
-    // Clear any existing markers and lines
-    if (_destinationMarker != null) {
-      _mapboxMapController.removeSymbol(_destinationMarker!);
-      _destinationMarker = null;
-    }
-
-    if (_routeLine != null) {
-      _mapboxMapController.removeLine(_routeLine!);
-      _routeLine = null;
-    }
-
-    // Add a new destination marker
-    _destinationMarker = await _mapboxMapController.addSymbol(
-      SymbolOptions(
-        geometry: coordinates,
-        iconImage: 'marker-15', // Use a default Mapbox icon
-        iconSize: 2.0,
-      ),
-    );
-
-    // Get the address for this location
-    SearchResult? location = await controller.mapboxService.reverseGeocode(coordinates);
-
-    if (location != null) {
-      // Get directions from current location to this point
-      await _getDirectionsToPoint(coordinates, location);
-    }
   }
 
   Future<void> _getDirectionsToPoint(LatLng destination, SearchResult location) async {
@@ -827,13 +710,13 @@ class _MapsTabState extends State<MapsTab> {
     Get.dialog(
       Dialog(
         child: Padding(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Finding route...'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('Finding route...'),
             ],
           ),
         ),
@@ -849,12 +732,25 @@ class _MapsTabState extends State<MapsTab> {
       );
 
       // Get directions
-      await controller.getDirections(origin, destination);
+      NavigationRoute? route = await _googleMapsService.getDirections(origin, destination);
 
-      // Show route preview
-      setState(() {
-        _showingRoutePreview = true;
-      });
+      if (route != null) {
+        controller.currentRoute.value = route;
+
+        // Draw route on map
+        if (mapController != null) {
+          _drawRouteOnMap(route);
+        }
+
+        // Show route preview
+        setState(() {
+          _showingRoutePreview = true;
+        });
+      } else {
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Could not find a route to the destination',
+        );
+      }
     } catch (e) {
       print('Error getting directions: $e');
     } finally {
@@ -873,15 +769,13 @@ class _MapsTabState extends State<MapsTab> {
 
       // Add a marker at the destination
       if (_destinationMarker != null) {
-        _mapboxMapController.removeSymbol(_destinationMarker!);
+        mapController!.dispose();
       }
 
-      _destinationMarker = await _mapboxMapController.addSymbol(
-        SymbolOptions(
-          geometry: destination,
-          iconImage: 'marker-15',
-          iconSize: 2.0,
-        ),
+      _destinationMarker = Marker(
+        markerId: const MarkerId('destination'),
+        position: destination,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       );
 
       // Get directions
@@ -899,15 +793,13 @@ class _MapsTabState extends State<MapsTab> {
 
       // Add a marker at the destination
       if (_destinationMarker != null) {
-        _mapboxMapController.removeSymbol(_destinationMarker!);
+        mapController!.dispose();
       }
 
-      _destinationMarker = await _mapboxMapController.addSymbol(
-        SymbolOptions(
-          geometry: destination,
-          iconImage: 'marker-15',
-          iconSize: 2.0,
-        ),
+      _destinationMarker = Marker(
+        markerId: const MarkerId('destination'),
+        position: destination,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       );
 
       // Get directions
@@ -916,14 +808,16 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   void _centerOnCurrentLocation() {
-    if (controller.currentLocation.value != null) {
-      _mapboxMapController.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(
-            controller.currentLocation.value!.latitude,
-            controller.currentLocation.value!.longitude,
+    if (controller.currentLocation.value != null && mapController != null) {
+      mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            zoom: 15.0,
           ),
-          15.0,
         ),
       );
     }
@@ -935,12 +829,12 @@ class _MapsTabState extends State<MapsTab> {
     // Show a dialog to get the name for this place
     Get.dialog(
       AlertDialog(
-        title: Text('Save Place'),
+        title: const Text('Save Place'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Name',
                 hintText: 'Home, Work, etc.',
               ),
@@ -955,11 +849,11 @@ class _MapsTabState extends State<MapsTab> {
         ),
         actions: [
           TextButton(
-            child: Text('Cancel'),
             onPressed: () => Get.back(),
+            child: const Text('Cancel'),
           ),
           TextButton(
-            child: Text('Save'),
+            child: const Text('Save'),
             onPressed: () {
               // Get the text from the field and save
               final TextEditingController controller = TextEditingController();
@@ -1007,21 +901,112 @@ class _MapsTabState extends State<MapsTab> {
   void _cancelRoutePreview() {
     setState(() {
       _showingRoutePreview = false;
+      _markers.clear();
+      _polylines.clear();
     });
-
-    // Clear markers and route
-    if (_destinationMarker != null) {
-      _mapboxMapController.removeSymbol(_destinationMarker!);
-      _destinationMarker = null;
-    }
-
-    if (_routeLine != null) {
-      _mapboxMapController.removeLine(_routeLine!);
-      _routeLine = null;
-    }
 
     // Clear route in controller
     controller.currentRoute.value = null;
   }
-}
 
+  void _drawRouteOnMap(NavigationRoute route) {
+    if (mapController == null) return;
+
+    // Decode polyline
+    List<LatLng> points = _googleMapsService.decodePolyline(route.geometry);
+
+    // Update polylines
+    Set<Polyline> newPolylines = {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: points,
+        color: Colors.blue,
+        width: 5,
+      ),
+    };
+    setState(() {
+      _polylines = newPolylines;
+    });
+
+    // Update markers
+    Set<Marker> newMarkers = {
+      Marker(
+        markerId: const MarkerId('start'),
+        position: LatLng(route.startLatitude, route.startLongitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+      ),
+      Marker(
+        markerId: const MarkerId('end'),
+        position: LatLng(route.endLatitude, route.endLongitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+    };
+    setState(() {
+      _markers = newMarkers;
+    });
+
+    // Fit bounds to show the entire route
+    LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(
+        points.map((p) => p.latitude).reduce(min),
+        points.map((p) => p.longitude).reduce(min),
+      ),
+      northeast: LatLng(
+        points.map((p) => p.latitude).reduce(max),
+        points.map((p) => p.longitude).reduce(max),
+      ),
+    );
+
+    mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        bounds,
+        50.0, // padding
+      ),
+    );
+  }
+
+  LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
+    double? sLat, sLng, nLat, nLng;
+    for (LatLng latLng in list) {
+      sLat = sLat == null || latLng.latitude < sLat ? latLng.latitude : sLat;
+      sLng = sLng == null || latLng.longitude < sLng ? latLng.longitude : sLng;
+      nLat = nLat == null || latLng.latitude > nLat ? latLng.latitude : nLat;
+      nLng = nLng == null || latLng.longitude > nLng ? latLng.longitude : nLng;
+    }
+    return LatLngBounds(southwest: LatLng(sLat!, sLng!), northeast: LatLng(nLat!, nLng!));
+  }
+
+  Future<void> getDirections(LatLng origin, LatLng destination) async {
+    try {
+      // Get directions
+      NavigationRoute? route = await _googleMapsService.getDirections(origin, destination);
+
+      if (route != null) {
+        controller.currentRoute.value = route;
+
+        // Draw route on map
+        if (mapController != null) {
+          _drawRouteOnMap(route);
+        }
+
+        // Show route preview
+        setState(() {
+          _showingRoutePreview = true;
+        });
+      } else {
+        CustomSnackBar.showErrorSnackbar(
+          message: 'Could not find a route to the destination',
+        );
+      }
+    } catch (e) {
+      print('Error getting directions: $e');
+    }
+  }
+
+  void toggleTraffic() {
+    setState(() {
+      _showTraffic = !_showTraffic;
+    });
+    mapController?.setMapStyle(null);
+  }
+}

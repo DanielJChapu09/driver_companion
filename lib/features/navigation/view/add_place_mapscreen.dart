@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import '../controller/navigation_controller.dart';
 import '../model/search_result_model.dart';
@@ -19,6 +19,7 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
   LatLng? selectedLocation;
   String? selectedAddress;
   bool isLoading = false;
+  GoogleMapController? mapController;
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +35,7 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
               return Center(child: CircularProgressIndicator());
             }
 
-            return MapboxMap(
-              accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+            return GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   controller.currentLocation.value!.latitude!,
@@ -43,10 +43,10 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
                 ),
                 zoom: 14.0,
               ),
-              onMapCreated: (MapboxMapController mapController) {
-                controller.setMapController(mapController);
+              onMapCreated: (GoogleMapController controller) {
+                mapController = controller;
               },
-              onMapClick: (point, coordinates) {
+              onTap: (coordinates) {
                 _handleMapClick(coordinates);
               },
               myLocationEnabled: true,
@@ -130,15 +130,12 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
 
     try {
       // Reverse geocode to get address
-      SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+      // SearchResult? result = await controller.mapboxService.reverseGeocode(coordinates);
+      //TODO: Implement reverse geocoding with Google Maps API
 
       setState(() {
         isLoading = false;
-        if (result != null) {
-          selectedAddress = result.address;
-        } else {
-          selectedAddress = 'Unknown location';
-        }
+        selectedAddress = 'Unknown location';
       });
     } catch (e) {
       setState(() {
@@ -150,4 +147,3 @@ class _AddPlaceMapScreenState extends State<AddPlaceMapScreen> {
     }
   }
 }
-

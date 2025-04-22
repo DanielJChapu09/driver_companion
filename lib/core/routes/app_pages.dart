@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:mymaptest/features/community/view/community_screen.dart';
 import 'package:mymaptest/features/navigation/view/saved_places_screen.dart';
+import 'package:mymaptest/firebase_options.dart';
 import 'package:mymaptest/pages/vehicle_details.dart';
 import '../../features/authentication/handler/auth_handler.dart';
 import '../../features/authentication/views/email_verification.dart';
@@ -17,10 +18,7 @@ import '../../features/main/pages/mainscreen.dart';
 import '../../features/navigation/view/navigation_screen.dart';
 import '../../features/navigation/view/search_screen.dart';
 import '../../features/service_locator/views/service_locator_screen.dart';
-import '../../pages/community.dart';
 import '../../pages/driver_ai.dart';
-import '../../pages/driver_behavior.dart';
-import '../../pages/service_locator.dart';
 import '../../pages/trends.dart';
 part 'app_routes.dart';
 
@@ -81,7 +79,7 @@ class AppPages {
     GetPage(
         name: Routes.serviceLocator,
         // page: ()=> ServiceLocator(),
-        page: ()=> ServiceLocatorScreen(),
+        page: ()=> ServiceLocatorScreen(apiKey: APIKeys.GGOOGLEMAPSAPIKEY,),
     ),
 
     GetPage(

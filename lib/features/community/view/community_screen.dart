@@ -7,14 +7,27 @@ import 'package:mymaptest/config/confidential/apikeys.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'create_notification_screen.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
-
 import 'notification_details_screen.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-class CommunityScreen extends StatelessWidget {
-  CommunityScreen({super.key});
+class CommunityScreen extends StatefulWidget {
+  const CommunityScreen({super.key});
 
+  @override
+  State<CommunityScreen> createState() => _CommunityScreenState();
+}
+
+class _CommunityScreenState extends State<CommunityScreen> {
   final CommunityController controller = Get.find<CommunityController>();
+  GoogleMapController? mapController;
+  Set<Marker> _markers = {};
+  bool _darkMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateMapMarkers();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +38,19 @@ class CommunityScreen extends StatelessWidget {
             : 'Drivers in ${controller.currentCity.value}')),
         actions: [
           IconButton(
+            icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
+            onPressed: () {
+              setState(() {
+                _darkMode = !_darkMode;
+              });
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
               controller.updateCurrentLocation();
               controller.fetchNearbyNotifications();
+              _updateMapMarkers();
             },
           ),
         ],
@@ -106,15 +128,14 @@ class CommunityScreen extends StatelessWidget {
     );
   }
 
-  // Build the map view with notification markers
+// Build the map view with notification markers
   Widget _buildMapView() {
     if (controller.currentLocation.value == null) {
       return const Center(child: Text('Location not available'));
     }
 
     return Obx(() {
-      return MapboxMap(
-        accessToken: APIKeys.MAPBOXPUBLICTOKEN,
+      return GoogleMap(
         initialCameraPosition: CameraPosition(
           target: LatLng(
             controller.currentLocation.value!.latitude,
@@ -122,130 +143,79 @@ class CommunityScreen extends StatelessWidget {
           ),
           zoom: 13.0,
         ),
-        onMapCreated: (MapboxMapController mapController) {
-          // Load map images and then add markers
-          _loadMapImages(mapController).then((_) {
-            // Add markers for each notification
-            _addNotificationMarkers(mapController);
-          }).catchError((error) {
-            print('Error loading map resources: $error');
-          });
+        onMapCreated: (GoogleMapController mapController) {
+          this.mapController = mapController;
+          _updateMapMarkers();
         },
-        onStyleLoadedCallback: () {
-          // Map style loaded
-          print('Map style loaded successfully');
-        },
+        markers: _markers,
+        myLocationEnabled: true,
+        mapType: MapType.normal,
       );
     });
   }
 
-  // Load map images before adding symbols
-  Future<void> _loadMapImages(MapboxMapController controller) async {
-    // Make sure to add these assets to your pubspec.yaml
-    final images = {
-      'car': 'assets/images/car.png',
-      'accident': 'assets/images/accident.png',
-      'traffic': 'assets/images/traffic.png',
-      'police': 'assets/images/police.png',
-      'hazard': 'assets/images/hazard.png',
-      'marker': 'assets/images/marker.png',
-    };
+// Update map markers based on notifications
+  void _updateMapMarkers() {
+    if (mapController == null) return;
 
-    for (final entry in images.entries) {
-      try {
-        final ByteData bytes = await rootBundle.load(entry.value);
-        final Uint8List list = bytes.buffer.asUint8List();
-        await controller.addImage(entry.key, list);
-        print('Successfully loaded image: ${entry.key}');
-      } catch (e) {
-        print('Failed to load image asset: ${entry.value}: $e');
-        // Add a fallback blank image as a placeholder
-        final placeholderImage = await _createPlaceholderImage(40, 40);
-        await controller.addImage(entry.key, placeholderImage);
-      }
-    }
-  }
+    // Clear existing markers
+    setState(() {
+      _markers.clear();
+    });
 
-  // Create a placeholder image when actual assets are missing
-  Future<Uint8List> _createPlaceholderImage(int width, int height) async {
-    final size = width * height * 4; // RGBA
-    final placeholder = Uint8List(size);
-
-    // Fill with a simple colored square (red)
-    for (var i = 0; i < size; i += 4) {
-      placeholder[i] = 255; // R
-      placeholder[i + 1] = 0; // G
-      placeholder[i + 2] = 0; // B
-      placeholder[i + 3] = 255; // A
-    }
-
-    return placeholder;
-  }
-
-  // Add markers for notifications
-  void _addNotificationMarkers(MapboxMapController mapController) {
-    if (this.controller.currentLocation.value == null) {
-      print('Current location is null, cannot add markers');
-      return;
-    }
-
-    try {
-      // Add marker for current location
-      mapController.addSymbol(SymbolOptions(
-        geometry: LatLng(
-          this.controller.currentLocation.value!.latitude,
-          this.controller.currentLocation.value!.longitude,
-        ),
-        iconImage: 'car',
-        iconSize: 1.5,
-      )).then((symbol) {
-        print('Added current location symbol successfully');
-      }).catchError((error) {
-        print('Error adding current location symbol: $error');
-      });
-
-      // Add markers for each notification
-      for (var notification in this.controller.nearbyNotifications) {
-        final iconImage = _getMarkerIconForType(notification.type);
-        mapController.addSymbol(SymbolOptions(
-          geometry: LatLng(
-            notification.latitude,
-            notification.longitude,
+    // Add marker for current location
+    if (controller.currentLocation.value != null) {
+      setState(() {
+        _markers.add(
+          Marker(
+            markerId: MarkerId('currentLocation'),
+            position: LatLng(
+              controller.currentLocation.value!.latitude,
+              controller.currentLocation.value!.longitude,
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           ),
-          iconImage: iconImage,
-          iconSize: 1.0,
-          textField: notification.type,
-          textOffset: const Offset(0, 1.5),
-          textColor: '#000000',
-          textSize: 12.0,
-        )).then((symbol) {
-          print('Added notification symbol successfully');
-        }).catchError((error) {
-          print('Error adding notification symbol: $error');
-        });
-      }
-    } catch (e) {
-      print('Error in _addNotificationMarkers: $e');
+        );
+      });
+    }
+
+    // Add markers for each notification
+    for (var notification in controller.nearbyNotifications) {
+      setState(() {
+        _markers.add(
+          Marker(
+            markerId: MarkerId(notification.id),
+            position: LatLng(
+              notification.latitude,
+              notification.longitude,
+            ),
+            icon: _getMarkerIconForType(notification.type),
+            infoWindow: InfoWindow(title: notification.type),
+          ),
+        );
+      });
     }
   }
 
-  // Get appropriate marker icon based on notification type
-  String _getMarkerIconForType(String type) {
+// Get appropriate marker icon based on notification type
+  BitmapDescriptor _getMarkerIconForType(String type) {
     switch (type.toLowerCase()) {
       case 'accident':
-        return 'accident';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'traffic':
-        return 'traffic';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
       case 'police':
-        return 'police';
-      case 'hazard':
-        return 'hazard';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
+            case 'hazard':
+            return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+      case 'construction':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
       default:
-        return 'marker';
+        return BitmapDescriptor.defaultMarker;
     }
   }
 
-  // Build the notifications list
+// Build the notifications list
   Widget _buildNotificationsList(List<RoadNotification> notifications) {
     if (notifications.isEmpty) {
       return Center(
@@ -283,7 +253,7 @@ class CommunityScreen extends StatelessWidget {
     );
   }
 
-  // Build a card for a single notification
+// Build a card for a single notification
   Widget _buildNotificationCard(BuildContext context, RoadNotification notification) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -387,7 +357,7 @@ class CommunityScreen extends StatelessWidget {
     );
   }
 
-  // Build icon for notification type
+// Build icon for notification type
   Widget _buildTypeIcon(String type) {
     IconData iconData;
     switch (type.toLowerCase()) {
@@ -410,10 +380,11 @@ class CommunityScreen extends StatelessWidget {
     return Icon(
       iconData,
       color: _getColorForType(type),
+      size: 28,
     );
   }
 
-  // Get color for notification type
+// Get color for notification type
   Color _getColorForType(String type) {
     switch (type.toLowerCase()) {
       case 'accident':
@@ -429,7 +400,7 @@ class CommunityScreen extends StatelessWidget {
     }
   }
 
-  // Format timestamp to relative time
+// Format timestamp to relative time
   String _formatTimeAgo(DateTime dateTime) {
     final difference = DateTime.now().difference(dateTime);
 
