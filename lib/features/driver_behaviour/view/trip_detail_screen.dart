@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../controller/driver_behaviour_controller.dart';
 import '../model/driving_event_model.dart';
 import '../model/trip_model.dart';
@@ -25,7 +25,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   DrivingTrip? trip;
   List<DrivingEvent> events = [];
   bool isLoading = true;
-  MapboxMapController? mapController;
+  GoogleMapController? mapController;
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
 
   @override
   void initState() {
@@ -89,8 +91,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget _buildMap() {
     return Stack(
       children: [
-        MapboxMap(
-          accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN', // Replace with your token
+        GoogleMap(
           initialCameraPosition: CameraPosition(
             target: LatLng(
               trip!.startLatitude,
@@ -98,12 +99,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             ),
             zoom: 14.0,
           ),
-          onMapCreated: (MapboxMapController controller) {
+          onMapCreated: (GoogleMapController controller) {
             mapController = controller;
 
             // Draw trip route and markers
             _drawTripOnMap();
           },
+          myLocationEnabled: true,
+          compassEnabled: true,
+          markers: _markers,
         ),
         Positioned(
           bottom: 16,
@@ -124,26 +128,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     if (mapController == null || events.isEmpty) return;
 
     // Add start and end markers
-    mapController!.addSymbol(
-      SymbolOptions(
-        geometry: LatLng(trip!.startLatitude, trip!.startLongitude),
-        iconImage: 'marker-start',
-        iconSize: 1.5,
-      ),
+    final startMarker = Marker(
+      markerId: MarkerId('start'),
+      position: LatLng(trip!.startLatitude, trip!.startLongitude),
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
     );
 
+    Marker? endMarker;
     if (trip!.endLatitude != null && trip!.endLongitude != null) {
-      mapController!.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(trip!.endLatitude!, trip!.endLongitude!),
-          iconImage: 'marker-end',
-          iconSize: 1.5,
-        ),
+      endMarker = Marker(
+        markerId: MarkerId('end'),
+        position: LatLng(trip!.endLatitude!, trip!.endLongitude!),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       );
     }
 
     // Add event markers
-    for (var event in events) {
+    Set<Marker> eventMarkers = events.map((event) {
       Color markerColor;
 
       switch (event.severity) {
@@ -163,39 +164,24 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           markerColor = Colors.grey;
       }
 
-      mapController!.addCircle(
-        CircleOptions(
-          geometry: LatLng(event.latitude, event.longitude),
-          circleRadius: 8,
-          circleColor: '#${markerColor.value.toRadixString(16).substring(2)}',
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#FFFFFF',
-        ),
+      return Marker(
+        markerId: MarkerId(event.id),
+        position: LatLng(event.latitude, event.longitude),
+        icon: BitmapDescriptor.defaultMarker,
       );
+    }).toSet();
 
-      // If this is the highlighted event, center the map on it
-      if (widget.highlightedEventId != null && event.id == widget.highlightedEventId) {
-        mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(
-            LatLng(event.latitude, event.longitude),
-            15.0,
-          ),
-        );
-      }
-    }
+    // Update markers on the map
+    setState(() {
+      _markers = {startMarker, if (endMarker != null) endMarker, ...eventMarkers};
+    });
 
     // Fit bounds to show all points (if no highlighted event)
     if (widget.highlightedEventId == null) {
       List<LatLng> points = events.map((e) => LatLng(e.latitude, e.longitude)).toList();
       if (points.length > 1) {
         mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            _getBoundsForPoints(points),
-            left: 50,
-            top: 100,
-            right: 50,
-            bottom: 50,
-          ),
+          CameraUpdate.newLatLngBounds(_getBoundsForPoints(points), 50, ),
         );
       }
     }
@@ -458,7 +444,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         valueText = '${event.value.toStringAsFixed(1)} rad/s';
         break;
       case EventType.speeding:
-        valueLabel = 'Speed';
         valueText = '${event.value.toStringAsFixed(1)} km/h';
         break;
       default:
@@ -485,7 +470,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             ),
           ),
         ),
-        title: Text(timeText),
+        title: Text(event.getEventTypeDisplay()),
         subtitle: Row(
           children: [
             Text('$valueLabel: '),
@@ -732,4 +717,3 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return Colors.red;
   }
 }
-

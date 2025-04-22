@@ -1,15 +1,18 @@
-import 'dart:math';
-import 'dart:ui';
-
+import 'dart:async';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import '../model/service_location_model.dart';
-import '../service/service_locator_service.dart';
+import '../service/service_locator_interface.dart';
+import '../service/service_repository_interface.dart';
+import '../service/service_repository.dart';
+import '../service/location_service.dart';
+
 
 class ServiceLocatorController extends GetxController {
-  final ServiceLocatorService _serviceLocatorService;
+  final IServiceRepository _serviceRepository;
+  final ILocationService _locationService;
 
   // Observable variables
   final Rx<Position?> currentLocation = Rx<Position?>(null);
@@ -25,34 +28,87 @@ class ServiceLocatorController extends GetxController {
   final RxList<ServiceLocation> routeServices = <ServiceLocation>[].obs;
 
   // Map controller
-  Rx<MapboxMapController?> mapController = Rx<MapboxMapController?>(null);
+  Rx<GoogleMapController?> mapController = Rx<GoogleMapController?>(null);
 
-  ServiceLocatorController({required String mapboxAccessToken})
-      : _serviceLocatorService = ServiceLocatorService(accessToken: mapboxAccessToken);
+  // Map markers
+  final RxSet<Marker> markers = <Marker>{}.obs;
+
+  // Location stream subscription
+  StreamSubscription<Position>? _positionStreamSubscription;
+
+  ServiceLocatorController({
+    required String apiKey,
+    IServiceRepository? serviceRepository,
+    ILocationService? locationService,
+  }) : _serviceRepository = serviceRepository ?? ServiceRepository(apiKey: apiKey),
+        _locationService = locationService ?? LocationService();
 
   @override
   void onInit() {
     super.onInit();
+    _initializeLocation();
     loadFavoriteServices();
     loadRecentServices();
   }
 
-  // Set map controller
-  void setMapController(MapboxMapController controller) {
-    mapController.value = controller;
+  @override
+  void onClose() {
+    _positionStreamSubscription?.cancel();
+    mapController.value?.dispose();
+    super.onClose();
   }
 
-  // Update current location
-  void updateCurrentLocation(Position position) {
-    currentLocation.value = position;
+  // Initialize location services
+  Future<void> _initializeLocation() async {
+    try {
+      bool serviceEnabled = await _locationService.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        errorMessage.value = 'Location services are disabled.';
+        return;
+      }
 
-    // Refresh services if we have a selected category
-    if (selectedCategory.value.isNotEmpty) {
-      searchServicesByCategory(selectedCategory.value);
+      bool permissionGranted = await _locationService.requestLocationPermission();
+      if (!permissionGranted) {
+        errorMessage.value = 'Location permissions are denied.';
+        return;
+      }
+
+      // Get initial position
+      Position position = await _locationService.getCurrentPosition();
+      currentLocation.value = position;
+
+      // Start listening to position updates
+      _positionStreamSubscription = _locationService.getPositionStream().listen(
+              (Position position) {
+            currentLocation.value = position;
+            _updateServicesDistances();
+
+            // Update user location marker if map is initialized
+            if (mapController.value != null) {
+              _updateUserLocationMarker();
+            }
+          },
+          onError: (error) {
+            DevLogs.logError('Error from position stream: $error');
+          }
+      );
+    } catch (e) {
+      errorMessage.value = 'Failed to initialize location: $e';
+      DevLogs.logError('Error initializing location: $e');
+    }
+  }
+
+  // Set map controller
+  void setMapController(GoogleMapController controller) {
+    mapController.value = controller;
+
+    // Update markers if we have services
+    if (nearbyServices.isNotEmpty) {
+      _addServiceMarkersToMap(nearbyServices);
     }
 
-    // Update distances for favorites and recents
-    _updateServicesDistances();
+    // Add user location marker
+    _updateUserLocationMarker();
   }
 
   // Search for services by category
@@ -72,7 +128,7 @@ class ServiceLocatorController extends GetxController {
           currentLocation.value!.longitude
       );
 
-      List<ServiceLocation> services = await _serviceLocatorService.searchServicesByCategory(
+      List<ServiceLocation> services = await _serviceRepository.searchServicesByCategory(
           category,
           location
       );
@@ -81,9 +137,7 @@ class ServiceLocatorController extends GetxController {
       isLoading.value = false;
 
       // Add markers to map
-      if (mapController.value != null) {
-        _addServiceMarkersToMap(services);
-      }
+      _addServiceMarkersToMap(services);
     } catch (e) {
       isLoading.value = false;
       errorMessage.value = 'Failed to search services: $e';
@@ -113,7 +167,7 @@ class ServiceLocatorController extends GetxController {
           currentLocation.value!.longitude
       );
 
-      List<ServiceLocation> services = await _serviceLocatorService.searchServicesByKeyword(
+      List<ServiceLocation> services = await _serviceRepository.searchServicesByKeyword(
           keyword,
           location
       );
@@ -122,7 +176,7 @@ class ServiceLocatorController extends GetxController {
       isSearching.value = false;
 
       // Add markers to map if in search mode
-      if (mapController.value != null && services.isNotEmpty) {
+      if (services.isNotEmpty) {
         _addServiceMarkersToMap(services);
       }
     } catch (e) {
@@ -145,7 +199,7 @@ class ServiceLocatorController extends GetxController {
           currentLocation.value!.longitude
       );
 
-      return await _serviceLocatorService.getServiceDetails(serviceId, location);
+      return await _serviceRepository.getServiceDetails(serviceId, location);
     } catch (e) {
       errorMessage.value = 'Failed to get service details: $e';
       DevLogs.logError('Error getting service details: $e');
@@ -156,7 +210,7 @@ class ServiceLocatorController extends GetxController {
   // Add service to favorites
   Future<void> addServiceToFavorites(ServiceLocation service) async {
     try {
-      bool success = await _serviceLocatorService.addServiceToFavorites(service);
+      bool success = await _serviceRepository.addServiceToFavorites(service);
 
       if (success) {
         await loadFavoriteServices();
@@ -185,7 +239,7 @@ class ServiceLocatorController extends GetxController {
   // Remove service from favorites
   Future<void> removeServiceFromFavorites(String serviceId) async {
     try {
-      bool success = await _serviceLocatorService.removeServiceFromFavorites(serviceId);
+      bool success = await _serviceRepository.removeServiceFromFavorites(serviceId);
 
       if (success) {
         await loadFavoriteServices();
@@ -221,7 +275,7 @@ class ServiceLocatorController extends GetxController {
           currentLocation.value!.longitude
       );
 
-      List<ServiceLocation> services = await _serviceLocatorService.getFavoriteServices(location);
+      List<ServiceLocation> services = await _serviceRepository.getFavoriteServices(location);
       favoriteServices.value = services;
     } catch (e) {
       DevLogs.logError('Error loading favorite services: $e');
@@ -231,7 +285,7 @@ class ServiceLocatorController extends GetxController {
   // Add service to recent
   Future<void> addServiceToRecent(ServiceLocation service) async {
     try {
-      await _serviceLocatorService.addServiceToRecent(service);
+      await _serviceRepository.addServiceToRecent(service);
       await loadRecentServices();
     } catch (e) {
       DevLogs.logError('Error adding service to recent: $e');
@@ -248,7 +302,7 @@ class ServiceLocatorController extends GetxController {
           currentLocation.value!.longitude
       );
 
-      List<ServiceLocation> services = await _serviceLocatorService.getRecentServices(location);
+      List<ServiceLocation> services = await _serviceRepository.getRecentServices(location);
       recentServices.value = services;
     } catch (e) {
       DevLogs.logError('Error loading recent services: $e');
@@ -258,7 +312,7 @@ class ServiceLocatorController extends GetxController {
   // Clear recent services
   Future<void> clearRecentServices() async {
     try {
-      bool success = await _serviceLocatorService.clearRecentServices();
+      bool success = await _serviceRepository.clearRecentServices();
 
       if (success) {
         recentServices.clear();
@@ -290,7 +344,7 @@ class ServiceLocatorController extends GetxController {
     errorMessage.value = '';
 
     try {
-      List<ServiceLocation> services = await _serviceLocatorService.getServicesAlongRoute(
+      List<ServiceLocation> services = await _serviceRepository.getServicesAlongRoute(
           category,
           routePoints
       );
@@ -299,9 +353,7 @@ class ServiceLocatorController extends GetxController {
       isLoading.value = false;
 
       // Add markers to map
-      if (mapController.value != null) {
-        _addServiceMarkersToMap(services);
-      }
+      _addServiceMarkersToMap(services);
     } catch (e) {
       isLoading.value = false;
       errorMessage.value = 'Failed to get services along route: $e';
@@ -309,58 +361,111 @@ class ServiceLocatorController extends GetxController {
     }
   }
 
+  // Get available service categories
+  Map<String, String> getServiceCategories() {
+    return _serviceRepository.getServiceCategories();
+  }
+
   // Helper method to add service markers to map
   void _addServiceMarkersToMap(List<ServiceLocation> services) {
     if (mapController.value == null) return;
 
-    // Clear existing markers
-    mapController.value!.clearSymbols();
+    // Clear existing markers except user location
+    Set<Marker> updatedMarkers = {};
+
+    // Keep user location marker if it exists
+    for (var marker in markers) {
+      if (marker.markerId.value == 'user_location') {
+        updatedMarkers.add(marker);
+        break;
+      }
+    }
 
     // Add markers for each service
     for (var service in services) {
-      mapController.value!.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(service.latitude, service.longitude),
-          iconImage: _getMarkerIconForCategory(service.category),
-          iconSize: 1.0,
-          textField: service.name,
-          textOffset: const Offset(0, 1.5),
-          textSize: 12.0,
+      final markerId = MarkerId(service.id);
+
+      updatedMarkers.add(
+        Marker(
+          markerId: markerId,
+          position: LatLng(service.latitude, service.longitude),
+          infoWindow: InfoWindow(
+            title: service.name,
+            snippet: service.address,
+            onTap: () {
+              // Navigate to service details
+              _onMarkerTapped(service);
+            },
+          ),
+          icon: _getMarkerIconForCategory(service.category),
         ),
       );
     }
+
+    markers.value = updatedMarkers;
+  }
+
+  // Update user location marker
+  void _updateUserLocationMarker() {
+    if (mapController.value == null || currentLocation.value == null) return;
+
+    // Create a set with existing markers but remove user location marker if it exists
+    Set<Marker> updatedMarkers = markers.where((m) => m.markerId.value != 'user_location').toSet();
+
+    // Add updated user location marker
+    updatedMarkers.add(
+      Marker(
+        markerId: const MarkerId('user_location'),
+        position: LatLng(
+            currentLocation.value!.latitude,
+            currentLocation.value!.longitude
+        ),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        zIndex: 2, // Ensure user marker is on top
+        flat: true,
+        rotation: currentLocation.value!.heading.toDouble(),
+      ),
+    );
+
+    markers.value = updatedMarkers;
   }
 
   // Helper method to get marker icon for category
-  String _getMarkerIconForCategory(String category) {
+  BitmapDescriptor _getMarkerIconForCategory(String category) {
+    // In a real app, you would use custom icons for each category
+    // For now, we'll use different hues of the default marker
     switch (category) {
       case 'gas_station':
-        return 'gas-station';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'mechanic':
-        return 'car-repair';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
       case 'car_wash':
-        return 'car-wash';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'parking':
-        return 'parking';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
       case 'restaurant':
-        return 'restaurant';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
       case 'hotel':
-        return 'lodging';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
       case 'hospital':
-        return 'hospital';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose);
       case 'police':
-        return 'police';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       case 'ev_charging':
-        return 'charging';
-      case 'rest_area':
-        return 'rest-area';
-      case 'atm':
-        return 'atm';
-      case 'convenience_store':
-        return 'shop';
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta);
       default:
-        return 'marker';
+        return BitmapDescriptor.defaultMarker;
     }
+  }
+
+  // Helper method to handle marker tap
+  void _onMarkerTapped(ServiceLocation service) {
+    // Add to recent services
+    addServiceToRecent(service);
+
+    // Navigate to service details screen
+    // This would be implemented in your navigation system
+    // For example: Get.toNamed('/service-details', arguments: service);
   }
 
   // Helper method to update distances for favorites and recents
@@ -374,7 +479,7 @@ class ServiceLocatorController extends GetxController {
 
     // Update favorites
     List<ServiceLocation> updatedFavorites = favoriteServices.map((service) {
-      double distance = _calculateDistance(
+      double distance = _locationService.calculateDistanceCoordinates(
           location.latitude,
           location.longitude,
           service.latitude,
@@ -391,7 +496,7 @@ class ServiceLocatorController extends GetxController {
 
     // Update recents
     List<ServiceLocation> updatedRecents = recentServices.map((service) {
-      double distance = _calculateDistance(
+      double distance = _locationService.calculateDistanceCoordinates(
           location.latitude,
           location.longitude,
           service.latitude,
@@ -404,13 +509,4 @@ class ServiceLocatorController extends GetxController {
 
     recentServices.value = updatedRecents;
   }
-
-  // Helper method to calculate distance between two points in km
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double p = 0.017453292519943295; // Math.PI / 180
-    final double a = 0.5 - cos((lat2 - lat1) * p) / 2 +
-        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
-    return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
-  }
 }
-

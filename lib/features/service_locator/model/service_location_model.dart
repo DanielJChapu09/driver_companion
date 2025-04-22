@@ -1,5 +1,6 @@
-import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 
+/// Model class representing a service location
 class ServiceLocation {
   final String id;
   final String name;
@@ -10,18 +11,15 @@ class ServiceLocation {
   final String? phoneNumber;
   final String? website;
   final double? rating;
-  final int? reviewCount;
   final bool isOpen;
-  final Map<String, dynamic> properties;
-  final double? distance; // Distance from current location in km
-  final double? duration; // Estimated time to reach in minutes
+  final Map<String, dynamic>? properties;
+  final double? distance;
+  final double? duration;
   final List<String> amenities;
-  final List<String> paymentMethods;
-  final String? priceLevel;
-  final Map<String, dynamic>? hours;
+  final bool isFavorite;
 
   ServiceLocation({
-    String? id,
+    required this.id,
     required this.name,
     required this.address,
     required this.latitude,
@@ -30,63 +28,15 @@ class ServiceLocation {
     this.phoneNumber,
     this.website,
     this.rating,
-    this.reviewCount,
     this.isOpen = true,
-    this.properties = const {},
+    this.properties,
     this.distance,
     this.duration,
     this.amenities = const [],
-    this.paymentMethods = const [],
-    this.priceLevel,
-    this.hours,
-  }) : id = id ?? const Uuid().v4();
+    this.isFavorite = false,
+  });
 
-  factory ServiceLocation.fromJson(Map<String, dynamic> json) {
-    return ServiceLocation(
-      id: json['id'],
-      name: json['name'],
-      address: json['address'],
-      latitude: json['latitude'],
-      longitude: json['longitude'],
-      category: json['category'],
-      phoneNumber: json['phoneNumber'],
-      website: json['website'],
-      rating: json['rating'],
-      reviewCount: json['reviewCount'],
-      isOpen: json['isOpen'] ?? true,
-      properties: json['properties'] ?? {},
-      distance: json['distance'],
-      duration: json['duration'],
-      amenities: List<String>.from(json['amenities'] ?? []),
-      paymentMethods: List<String>.from(json['paymentMethods'] ?? []),
-      priceLevel: json['priceLevel'],
-      hours: json['hours'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'address': address,
-      'latitude': latitude,
-      'longitude': longitude,
-      'category': category,
-      'phoneNumber': phoneNumber,
-      'website': website,
-      'rating': rating,
-      'reviewCount': reviewCount,
-      'isOpen': isOpen,
-      'properties': properties,
-      'distance': distance,
-      'duration': duration,
-      'amenities': amenities,
-      'paymentMethods': paymentMethods,
-      'priceLevel': priceLevel,
-      'hours': hours,
-    };
-  }
-
+  /// Create a copy of this ServiceLocation with the given fields replaced with the new values
   ServiceLocation copyWith({
     String? id,
     String? name,
@@ -97,15 +47,12 @@ class ServiceLocation {
     String? phoneNumber,
     String? website,
     double? rating,
-    int? reviewCount,
     bool? isOpen,
     Map<String, dynamic>? properties,
     double? distance,
     double? duration,
     List<String>? amenities,
-    List<String>? paymentMethods,
-    String? priceLevel,
-    Map<String, dynamic>? hours,
+    bool? isFavorite,
   }) {
     return ServiceLocation(
       id: id ?? this.id,
@@ -117,16 +64,65 @@ class ServiceLocation {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       website: website ?? this.website,
       rating: rating ?? this.rating,
-      reviewCount: reviewCount ?? this.reviewCount,
       isOpen: isOpen ?? this.isOpen,
       properties: properties ?? this.properties,
       distance: distance ?? this.distance,
       duration: duration ?? this.duration,
       amenities: amenities ?? this.amenities,
-      paymentMethods: paymentMethods ?? this.paymentMethods,
-      priceLevel: priceLevel ?? this.priceLevel,
-      hours: hours ?? this.hours,
+      isFavorite: isFavorite ?? this.isFavorite,
     );
   }
-}
 
+  /// Convert ServiceLocation to JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'address': address,
+      'latitude': latitude,
+      'longitude': longitude,
+      'category': category,
+      'phoneNumber': phoneNumber,
+      'website': website,
+      'rating': rating,
+      'isOpen': isOpen,
+      'properties': properties,
+      'distance': distance,
+      'duration': duration,
+      'amenities': amenities,
+      'isFavorite': isFavorite,
+    };
+  }
+
+  /// Create ServiceLocation from JSON
+  factory ServiceLocation.fromJson(Map<String, dynamic> json) {
+    return ServiceLocation(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      address: json['address'] ?? '',
+      latitude: json['latitude'] ?? 0.0,
+      longitude: json['longitude'] ?? 0.0,
+      category: json['category'] ?? 'other',
+      phoneNumber: json['phoneNumber'],
+      website: json['website'],
+      rating: json['rating']?.toDouble(),
+      isOpen: json['isOpen'] ?? true,
+      properties: json['properties'],
+      distance: json['distance']?.toDouble(),
+      duration: json['duration']?.toDouble(),
+      amenities: json['amenities'] != null
+          ? List<String>.from(json['amenities'])
+          : [],
+      isFavorite: json['isFavorite'] ?? false,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ServiceLocation && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
+}

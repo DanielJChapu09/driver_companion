@@ -1,23 +1,24 @@
 import 'dart:math';
-
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_gl/mapbox_gl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
-import 'package:latlong2/latlong.dart' as latlong2;
 import 'dart:async';
 import '../model/place_model.dart';
 import '../model/route_model.dart';
 import '../model/search_result_model.dart';
-import '../service/mapbox_service.dart';
+import '../service/googlemaps_service.dart';
+import '../service/navigation_service_interface.dart';
 import '../service/navigation_service.dart';
 import '../service/places_service.dart';
+import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 
 class NavigationController extends GetxController {
-  final MapboxService mapboxService;
+  final GoogleMapsService mapsService;
   final PlacesService _placesService = PlacesService();
-  final NavigationService _navigationService = NavigationService();
+  final INavigationService _navigationService = NavigationService();
 
   // Observable variables
   final Rx<Position?> currentLocation = Rx<Position?>(null);
@@ -25,7 +26,7 @@ class NavigationController extends GetxController {
   final RxList<Place> favoritePlaces = <Place>[].obs;
   final RxList<Place> recentPlaces = <Place>[].obs;
   final Rx<NavigationRoute?> currentRoute = Rx<NavigationRoute?>(null);
-  final Rx<List<latlong2.LatLng>> previewRoutePoints = Rx<List<latlong2.LatLng>>([]);
+  final Rx<List<LatLng>> previewRoutePoints = Rx<List<LatLng>>([]);
   final RxList<NavigationRoute> alternativeRoutes = <NavigationRoute>[].obs;
   final RxBool isNavigating = false.obs;
   final RxBool isLoading = false.obs;
@@ -39,12 +40,16 @@ class NavigationController extends GetxController {
   final RxBool isSearching = false.obs;
   final RxBool showTraffic = true.obs;
   final RxBool voiceGuidanceEnabled = true.obs;
+  final RxList<String> selectedServiceTypes = <String>[].obs;
+  final RxBool showAlternativeRoutes = false.obs;
 
   // Map controller
-  Rx<MapboxMapController?> mapController = Rx<MapboxMapController?>(null);
+  Rx<GoogleMapController?> mapController = Rx<GoogleMapController?>(null);
+  Rx<Set<Polyline>> polylines = Rx<Set<Polyline>>({});
+  Rx<Set<Marker>> markers = Rx<Set<Marker>>({});
 
-  NavigationController({required String mapboxAccessToken})
-      : mapboxService = MapboxService(accessToken: mapboxAccessToken);
+  NavigationController({required String googleMapsApiKey})
+      : mapsService = GoogleMapsService(apiKey: googleMapsApiKey);
 
   @override
   void onInit() {
@@ -83,7 +88,7 @@ class NavigationController extends GetxController {
       hasArrived.value = arrived;
       if (arrived) {
         isNavigating.value = false;
-        CustomSnackBar.showErrorSnackbar(message:'You have reached your destination',        );
+        CustomSnackBar.showSuccessSnackbar(message: 'You have reached your destination');
       }
     });
   }
@@ -127,7 +132,7 @@ class NavigationController extends GetxController {
   }
 
   // Set map controller
-  void setMapController(MapboxMapController controller) {
+  void setMapController(GoogleMapController controller) {
     mapController.value = controller;
   }
 
@@ -150,7 +155,7 @@ class NavigationController extends GetxController {
         );
       }
 
-      List<SearchResult> results = await mapboxService.searchPlaces(
+      List<SearchResult> results = await mapsService.searchPlaces(
         query,
         proximity: proximity,
       );
@@ -160,7 +165,7 @@ class NavigationController extends GetxController {
     } catch (e) {
       isSearching.value = false;
       DevLogs.logError('Error searching places: $e');
-      CustomSnackBar.showErrorSnackbar(message: 'Failed to search places',);
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to search places');
     }
   }
 
@@ -170,7 +175,7 @@ class NavigationController extends GetxController {
 
     try {
       // Get primary route
-      NavigationRoute? route = await mapboxService.getDirections(
+      NavigationRoute? route = await mapsService.getDirections(
         origin,
         destination,
       );
@@ -178,17 +183,33 @@ class NavigationController extends GetxController {
       if (route != null) {
         currentRoute.value = route;
 
-        // Get alternative routes
-        NavigationRoute? alternativeRoute = await mapboxService.getDirections(
-          origin,
-          destination,
-          alternatives: true,
-        );
+        // Get alternative routes if requested
+        if (showAlternativeRoutes.value) {
+          NavigationRoute? alternativeRoute = await mapsService.getDirections(
+            origin,
+            destination,
+            alternatives: true,
+          );
 
-        if (alternativeRoute != null) {
-          alternativeRoutes.value = [alternativeRoute];
-        } else {
-          alternativeRoutes.clear();
+          if (alternativeRoute != null) {
+            alternativeRoutes.value = [alternativeRoute];
+          } else {
+            alternativeRoutes.clear();
+          }
+        }
+
+        // Check if service types are selected
+        if (selectedServiceTypes.isNotEmpty) {
+          List<NavigationRoute> routesWithServices = await mapsService.getDirectionsWithServiceLocations(
+            origin,
+            destination,
+            selectedServiceTypes,
+          );
+
+          // The first route is the direct route, which we already have
+          if (routesWithServices.length > 1) {
+            alternativeRoutes.value = routesWithServices.sublist(1);
+          }
         }
 
         // Draw route on map
@@ -196,23 +217,53 @@ class NavigationController extends GetxController {
           _drawRouteOnMap(route);
         }
       } else {
-        CustomSnackBar.showErrorSnackbar(message:'Could not find a route to the destination',    );
+        CustomSnackBar.showErrorSnackbar(message: 'Could not find a route to the destination');
       }
 
       isLoading.value = false;
     } catch (e) {
       isLoading.value = false;
       DevLogs.logError('Error getting directions: $e');
-      CustomSnackBar.showErrorSnackbar(message:'Failed to get directions', );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
     }
   }
 
-  Future<void> getRoutePreview(latlong2.LatLng origin, latlong2.LatLng destination) async {
+  // Get optimized route with multiple waypoints
+  Future<void> getOptimizedRoute(LatLng origin, LatLng destination, List<LatLng> waypoints) async {
+    isLoading.value = true;
+
+    try {
+      NavigationRoute? route = await mapsService.getOptimizedRoute(
+        origin,
+        destination,
+        waypoints,
+      );
+
+      if (route != null) {
+        currentRoute.value = route;
+
+        // Draw route on map
+        if (mapController.value != null) {
+          _drawRouteOnMap(route);
+        }
+      } else {
+        CustomSnackBar.showErrorSnackbar(message: 'Could not find an optimized route');
+      }
+
+      isLoading.value = false;
+    } catch (e) {
+      isLoading.value = false;
+      DevLogs.logError('Error getting optimized route: $e');
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to get optimized route');
+    }
+  }
+
+  Future<void> getRoutePreview(LatLng origin, LatLng destination) async {
     isLoading.value = true;
 
     try {
       // Get primary route
-      List<latlong2.LatLng>? route = await mapboxService.getPreviewRoute(
+      List<LatLng>? route = await mapsService.getPreviewRoute(
           wayPoints: [
             origin,
             destination,
@@ -221,7 +272,6 @@ class NavigationController extends GetxController {
 
       if (route.isNotEmpty) {
         previewRoutePoints.value = route;
-
       } else {
         CustomSnackBar.showErrorSnackbar(
           message: 'Could not find a route to the destination',
@@ -232,14 +282,11 @@ class NavigationController extends GetxController {
     } catch (e) {
       isLoading.value = false;
       DevLogs.logError('Error getting directions: $e');
-
       CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
-
     }
   }
 
-  // Add this method to the NavigationController class to handle custom location tracking
-
+  // Update map camera with location
   void updateMapCameraWithLocation() {
     if (mapController.value != null && currentLocation.value != null && isNavigating.value) {
       mapController.value!.animateCamera(
@@ -254,7 +301,7 @@ class NavigationController extends GetxController {
     }
   }
 
-  // Modify the startNavigation method to include camera updates
+  // Start navigation
   Future<void> startNavigation() async {
     if (currentRoute.value == null) return;
 
@@ -282,11 +329,11 @@ class NavigationController extends GetxController {
           );
         }
       } else {
-        CustomSnackBar.showErrorSnackbar(message:'Failed to start navigation', );
+        CustomSnackBar.showErrorSnackbar(message: 'Failed to start navigation');
       }
     } catch (e) {
       DevLogs.logError('Error starting navigation: $e');
-      CustomSnackBar.showErrorSnackbar(message: 'Failed to start navigation', );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to start navigation');
     }
   }
 
@@ -318,13 +365,13 @@ class NavigationController extends GetxController {
 
       if (added) {
         await loadSavedPlaces();
-        CustomSnackBar.showSuccessSnackbar(message:'Place added to favorites',   );
+        CustomSnackBar.showSuccessSnackbar(message: 'Place added to favorites');
       } else {
-        CustomSnackBar.showErrorSnackbar(message:'Failed to add place to favorites',    );
+        CustomSnackBar.showErrorSnackbar(message: 'Failed to add place to favorites');
       }
     } catch (e) {
       DevLogs.logError('Error adding to favorites: $e');
-      CustomSnackBar.showErrorSnackbar(message:'Failed to add place to favorites',);
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to add place to favorites');
     }
   }
 
@@ -335,18 +382,13 @@ class NavigationController extends GetxController {
 
       if (removed) {
         await loadSavedPlaces();
-        CustomSnackBar.showSuccessSnackbar(message:'Place removed from favorites',
-        );
+        CustomSnackBar.showSuccessSnackbar(message: 'Place removed from favorites');
       } else {
-        CustomSnackBar.showErrorSnackbar(
-          message:'Failed to remove place from favorites',
-        );
+        CustomSnackBar.showErrorSnackbar(message: 'Failed to remove place from favorites');
       }
     } catch (e) {
       DevLogs.logError('Error removing from favorites: $e');
-      CustomSnackBar.showErrorSnackbar(
-        message:'Failed to remove place from favorites',
-      );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to remove place from favorites');
     }
   }
 
@@ -378,19 +420,13 @@ class NavigationController extends GetxController {
 
       if (cleared) {
         recentPlaces.clear();
-        CustomSnackBar.showSuccessSnackbar(
-          message:'Recent places cleared',
-        );
+        CustomSnackBar.showSuccessSnackbar(message: 'Recent places cleared');
       } else {
-        CustomSnackBar.showErrorSnackbar(
-          message: 'Failed to clear recent places',
-        );
+        CustomSnackBar.showErrorSnackbar(message: 'Failed to clear recent places');
       }
     } catch (e) {
       DevLogs.logError('Error clearing recent places: $e');
-      CustomSnackBar.showErrorSnackbar(
-        message: 'Failed to clear recent places',
-      );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to clear recent places');
     }
   }
 
@@ -401,19 +437,13 @@ class NavigationController extends GetxController {
 
       if (updated) {
         await loadSavedPlaces();
-        CustomSnackBar.showSuccessSnackbar(
-          message: 'Place updated',
-        );
+        CustomSnackBar.showSuccessSnackbar(message: 'Place updated');
       } else {
-        CustomSnackBar.showErrorSnackbar(
-          message: 'Failed to update place',
-        );
+        CustomSnackBar.showErrorSnackbar(message: 'Failed to update place');
       }
     } catch (e) {
       DevLogs.logError('Error updating place: $e');
-      CustomSnackBar.showErrorSnackbar(
-        message:'Failed to update place',
-      );
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to update place');
     }
   }
 
@@ -421,70 +451,74 @@ class NavigationController extends GetxController {
   void _drawRouteOnMap(NavigationRoute route) {
     if (mapController.value == null) return;
 
-    // Clear previous routes
-    mapController.value!.clearLines();
-
     // Decode polyline
-    List<LatLng> points = _decodePolyline(route.geometry);
+    List<LatLng> points = mapsService.decodePolyline(route.geometry);
 
-    // Add main route line
-    mapController.value!.addLine(
-      LineOptions(
-        geometry: points,
-        lineColor: "#3887be",
-        lineWidth: 5.0,
-        lineOpacity: 0.8,
+    // Create a set to hold the new polylines
+    Set<Polyline> newPolylines = {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: points,
+        color: Colors.blue,
+        width: 5,
       ),
-    );
+    };
 
     // Add alternative routes if available
-    for (var altRoute in alternativeRoutes) {
-      List<LatLng> altPoints = _decodePolyline(altRoute.geometry);
-      mapController.value!.addLine(
-        LineOptions(
-          geometry: altPoints,
-          lineColor: "#888888",
-          lineWidth: 3.0,
-          lineOpacity: 0.6,
-          linePattern: "dash",
+    for (int i = 0; i < alternativeRoutes.length; i++) {
+      var altRoute = alternativeRoutes[i];
+      List<LatLng> altPoints = mapsService.decodePolyline(altRoute.geometry);
+
+      newPolylines.add(
+        Polyline(
+          polylineId: PolylineId('alt_route_$i'),
+          points: altPoints,
+          color: Colors.grey,
+          width: 3,
+          patterns: [
+            PatternItem.dash(20),
+            PatternItem.gap(10),
+          ],
         ),
       );
     }
 
-    // Add start and end markers
-    mapController.value!.addSymbol(
-      SymbolOptions(
-        geometry: LatLng(route.startLatitude, route.startLongitude),
-        iconImage: "marker-start",
-        iconSize: 1.5,
-      ),
-    );
+    // Update the polylines
+    polylines.value = newPolylines;
 
-    mapController.value!.addSymbol(
-      SymbolOptions(
-        geometry: LatLng(route.endLatitude, route.endLongitude),
-        iconImage: "marker-end",
-        iconSize: 1.5,
+    // Create a set to hold the new markers
+    Set<Marker> newMarkers = {
+      Marker(
+        markerId: const MarkerId('start'),
+        position: LatLng(route.startLatitude, route.startLongitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
-    );
+      Marker(
+        markerId: const MarkerId('end'),
+        position: LatLng(route.endLatitude, route.endLongitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+    };
+
+    // Update the markers
+    markers.value = newMarkers;
 
     // Fit bounds to show the entire route
+    LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(
+        points.map((p) => p.latitude).reduce(min),
+        points.map((p) => p.longitude).reduce(min),
+      ),
+      northeast: LatLng(
+        points.map((p) => p.latitude).reduce(max),
+        points.map((p) => p.longitude).reduce(max),
+      ),
+    );
+
     mapController.value!.animateCamera(
       CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(
-            points.map((p) => p.latitude).reduce(min),
-            points.map((p) => p.longitude).reduce(min),
-          ),
-          northeast: LatLng(
-            points.map((p) => p.latitude).reduce(max),
-            points.map((p) => p.longitude).reduce(max),
-          ),
-        ),
-        left: 50,
-        top: 50,
-        right: 50,
-        bottom: 50,
+        bounds,
+        50.0, // padding
       ),
     );
   }
@@ -519,7 +553,7 @@ class NavigationController extends GetxController {
       int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
       lng += dlng;
 
-      points.add(LatLng(lat / 1E6, lng / 1E6));
+      points.add(LatLng(lat / 1E5, lng / 1E5));
     }
 
     return points;
@@ -528,6 +562,35 @@ class NavigationController extends GetxController {
   // Get place categories
   List<Map<String, dynamic>> getPlaceCategories() {
     return _placesService.getPlaceCategories();
+  }
+
+  // Get service types
+  List<Map<String, String>> getServiceTypes() {
+    return [
+      {'id': 'gas_station', 'name': 'Gas Station'},
+      {'id': 'restaurant', 'name': 'Restaurant'},
+      {'id': 'hotel', 'name': 'Hotel'},
+      {'id': 'parking', 'name': 'Parking'},
+      {'id': 'car_wash', 'name': 'Car Wash'},
+      {'id': 'mechanic', 'name': 'Mechanic'},
+      {'id': 'ev_charging', 'name': 'EV Charging'},
+      {'id': 'hospital', 'name': 'Hospital'},
+      {'id': 'police', 'name': 'Police Station'},
+    ];
+  }
+
+  // Toggle service type selection
+  void toggleServiceType(String serviceType) {
+    if (selectedServiceTypes.contains(serviceType)) {
+      selectedServiceTypes.remove(serviceType);
+    } else {
+      selectedServiceTypes.add(serviceType);
+    }
+  }
+
+  // Toggle alternative routes display
+  void toggleAlternativeRoutes() {
+    showAlternativeRoutes.value = !showAlternativeRoutes.value;
   }
 
   // Simulate navigation (for testing)
@@ -541,9 +604,8 @@ class NavigationController extends GetxController {
   // Toggle traffic display
   void toggleTraffic() {
     showTraffic.value = !showTraffic.value;
-
     if (mapController.value != null) {
-      //mapController.value!.setLayerVisibility("traffic", showTraffic.value);
+      //mapController.value!.setTrafficEnabled(showTraffic.value);
     }
   }
 
@@ -569,3 +631,4 @@ class NavigationController extends GetxController {
     }
   }
 }
+
