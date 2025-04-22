@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import '../../../firebase_options.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'notification_details_screen.dart';

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/core/utils/logs.dart';
+import '../../../firebase_options.dart';
 import '../controller/navigation_controller.dart';
 import '../model/route_model.dart';
 import 'package:flutter_tts/flutter_tts.dart';

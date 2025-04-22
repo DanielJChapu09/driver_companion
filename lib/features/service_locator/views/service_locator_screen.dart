@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlong2;
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import '../../../firebase_options.dart';
 import '../controller/service_locator_controller.dart';
 import '../model/service_location_model.dart';
 import '../service/service_locator_service.dart';

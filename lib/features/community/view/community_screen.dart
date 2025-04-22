@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import '../../../firebase_options.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'create_notification_screen.dart';

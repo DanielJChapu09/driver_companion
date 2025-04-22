@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../firebase_options.dart';
 import '../../navigation/controller/navigation_controller.dart';
 import '../controller/service_locator_controller.dart';
 import '../model/service_location_model.dart';

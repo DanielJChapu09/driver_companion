@@ -10,6 +10,7 @@ import '../features/authentication/controller/auth_controller.dart';
 import '../features/main/controller/botton_nav_controller.dart';
 import '../features/navigation/controller/navigation_controller.dart';
 import '../features/service_locator/controller/service_locator_controller.dart';
+import '../firebase_options.dart';
 import '../widgets/snackbar/custom_snackbar.dart';
 
 class InitialBinding extends Bindings {

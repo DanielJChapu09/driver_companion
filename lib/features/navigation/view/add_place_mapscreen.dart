@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import '../../../firebase_options.dart';
 import '../controller/navigation_controller.dart';
 import '../model/search_result_model.dart';
 

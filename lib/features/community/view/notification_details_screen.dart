@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_gl/mapbox_gl.dart';
 import '../../../config/confidential/apikeys.dart';
+import '../../../firebase_options.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 

@@ -12,6 +12,7 @@ import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
+import '../../../firebase_options.dart';
 import '../../driver_behaviour/controller/driver_behaviour_controller.dart';
 import '../../navigation/model/search_result_model.dart';
 import '../../navigation/view/navigation_screen.dart';
