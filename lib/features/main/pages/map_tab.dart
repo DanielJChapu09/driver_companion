@@ -1,5 +1,4 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
@@ -26,7 +25,7 @@ class MapsTab extends StatefulWidget {
   State<MapsTab> createState() => _MapsTabState();
 }
 
-class _MapsTabState extends State<MapsTab> {
+class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
   final NavigationController controller = Get.find<NavigationController>();
   final DriverBehaviorController behaviorController = Get.find<DriverBehaviorController>();
   GoogleMapController? mapController;
@@ -42,12 +41,49 @@ class _MapsTabState extends State<MapsTab> {
   Set<Marker> _markers = {};
   bool _showTraffic = false;
   bool _darkMode = false;
+  MapType _currentMapType = MapType.normal;
+
+  // Animation controllers
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
     _initDriverBehavior();
+
+    // Initialize animations
+    _animationController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 600),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.2, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.2, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _initDriverBehavior() async {
@@ -73,13 +109,31 @@ class _MapsTabState extends State<MapsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    _darkMode = isDark;
+
     return Scaffold(
       body: Stack(
         children: [
           // Map
           Obx(() {
             if (controller.currentLocation.value == null) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      color: theme.colorScheme.primary,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Getting your location...',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              );
             }
 
             return GoogleMap(
@@ -92,6 +146,7 @@ class _MapsTabState extends State<MapsTab> {
               ),
               onMapCreated: (GoogleMapController controller) {
                 mapController = controller;
+                _updateMapStyle(isDark);
               },
               myLocationEnabled: true,
               compassEnabled: true,
@@ -101,9 +156,10 @@ class _MapsTabState extends State<MapsTab> {
                 _handleMapTap(coordinates);
               },
               trafficEnabled: _showTraffic,
-              mapType: MapType.normal,
+              mapType: _currentMapType,
               zoomControlsEnabled: false,
               buildingsEnabled: true,
+              myLocationButtonEnabled: false,
             );
           }),
 
@@ -111,86 +167,213 @@ class _MapsTabState extends State<MapsTab> {
           if (_isLoadingDestination)
             Container(
               color: Colors.black.withOpacity(0.3),
-              child: const Center(
-                child: CircularProgressIndicator(),
+              child: Center(
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: theme.colorScheme.primary,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Finding location...',
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
 
           // Search bar
           Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
+            top: MediaQuery.of(context).padding.top + 16,
             left: 16,
             right: 16,
-            child: GestureDetector(
-              onTap: () => Get.toNamed(Routes.searchScreen),
-              child: Container(
-                height: 50,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: GestureDetector(
+                  onTap: () => Get.toNamed(Routes.searchScreen),
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search, color: Colors.grey),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Search for a destination',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 16,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.search,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                          SizedBox(width: 12),
+                          Text(
+                            'Where to?',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontSize: 16,
+                            ),
+                          ),
+                          Spacer(),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star,
+                                  color: theme.colorScheme.primary,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Saved',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
 
-          // Bottom action buttons
+          // Map controls
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 80,
+            right: 16,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
+                children: [
+                  _buildMapControlButton(
+                    icon: Icons.layers,
+                    onPressed: _showMapStyleOptions,
+                    tooltip: 'Map Layers',
+                    theme: theme,
+                    isDark: isDark,
+                  ),
+                  SizedBox(height: 8),
+                  _buildMapControlButton(
+                    icon: _showTraffic ? Icons.traffic : Icons.traffic_outlined,
+                    onPressed: toggleTraffic,
+                    tooltip: 'Traffic',
+                    theme: theme,
+                    isDark: isDark,
+                    isActive: _showTraffic,
+                  ),
+                  SizedBox(height: 8),
+                  _buildMapControlButton(
+                    icon: Icons.my_location,
+                    onPressed: _centerOnCurrentLocation,
+                    tooltip: 'My Location',
+                    theme: theme,
+                    isDark: isDark,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Quick action buttons
           Positioned(
             bottom: 16,
+            left: 16,
             right: 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // My location button
-                FloatingActionButton(
-                  heroTag: 'locationButton',
-                  mini: true,
-                  onPressed: () {
-                    if (mapController != null && controller.currentLocation.value != null) {
-                      mapController!.animateCamera(
-                        CameraUpdate.newCameraPosition(
-                          CameraPosition(
-                            target: LatLng(
-                              controller.currentLocation.value!.latitude,
-                              controller.currentLocation.value!.longitude,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
+                children: [
+                  // Driver behavior status card
+                  Obx(() => AnimatedSwitcher(
+                    duration: Duration(milliseconds: 300),
+                    child: behaviorController.isMonitoring.value
+                        ? _buildDriverStatusCard(theme, isDark)
+                        : SizedBox.shrink(),
+                  )),
+                  SizedBox(height: 16),
+
+                  // Quick action buttons
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quick Actions',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
-                            zoom: 16.0,
                           ),
-                        ),
-                      );
-                    }
-                  },
-                  child: const Icon(Icons.my_location),
-                ),
-                const SizedBox(height: 8),
-                // Saved places button
-                FloatingActionButton(
-                  heroTag: 'placesButton',
-                  mini: true,
-                  onPressed: () => Get.toNamed(Routes.savedPlacesScreen),
-                  child: const Icon(Icons.star),
-                ),
-              ],
+                          SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildQuickActionButton(
+                                icon: Icons.search,
+                                label: 'Search',
+                                onTap: () => Get.toNamed(Routes.searchScreen),
+                                theme: theme,
+                                isDark: isDark,
+                              ),
+                              _buildQuickActionButton(
+                                icon: Icons.star,
+                                label: 'Saved',
+                                onTap: () => Get.toNamed(Routes.savedPlacesScreen),
+                                theme: theme,
+                                isDark: isDark,
+                              ),
+                              _buildQuickActionButton(
+                                icon: Icons.local_gas_station,
+                                label: 'Services',
+                                onTap: () => Get.toNamed(Routes.serviceLocatorScreen),
+                                theme: theme,
+                                isDark: isDark,
+                              ),
+                              _buildQuickActionButton(
+                                icon: Icons.warning,
+                                label: 'Alerts',
+                                onTap: () => Get.toNamed(Routes.communityMapScreen),
+                                theme: theme,
+                                isDark: isDark,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -199,8 +382,8 @@ class _MapsTabState extends State<MapsTab> {
             Positioned(
               bottom: 16,
               left: 16,
-              right: 70,
-              child: _buildRoutePreviewCard(),
+              right: 16,
+              child: _buildRoutePreviewCard(theme, isDark),
             ),
 
           // Continue navigation button (only shown when navigating)
@@ -209,19 +392,55 @@ class _MapsTabState extends State<MapsTab> {
               return Positioned(
                 bottom: 16,
                 left: 16,
-                right: 70,
-                child: ElevatedButton(
-                  onPressed: () => Get.toNamed(Routes.navigationScreen),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    backgroundColor: Colors.green,
+                right: 16,
+                child: Card(
+                  elevation: 4,
+                  color: theme.colorScheme.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Text(
-                    'Continue Navigation',
-                    style: TextStyle(fontSize: 16),
+                  child: InkWell(
+                    onTap: () => Get.toNamed(Routes.navigationScreen),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.navigation,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Navigation in Progress',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Tap to continue',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.8),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right,
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -232,16 +451,153 @@ class _MapsTabState extends State<MapsTab> {
           // Route Preview Panel
           Obx(() {
             if (controller.currentRoute.value == null) return const SizedBox();
-            return _showingRoutePreview ? _buildRoutePreviewPanel() : const SizedBox();
+            return _showingRoutePreview ? _buildRoutePreviewPanel(theme, isDark) : const SizedBox();
           }),
+        ],
+      ),
+    );
+  }
 
-          // Driver Behavior Status
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 80,
-            right: 16,
-            child: Obx(() => _buildDriverBehaviorStatus()),
+  Widget _buildMapControlButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String tooltip,
+    required ThemeData theme,
+    required bool isDark,
+    bool isActive = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
         ],
+      ),
+      child: Material(
+        color: isDark ? Color(0xFF2C2C2C) : Colors.white,
+        elevation: 0,
+        shape: CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Tooltip(
+            message: tooltip,
+            child: Container(
+              padding: EdgeInsets.all(12),
+              child: Icon(
+                icon,
+                color: isActive
+                    ? theme.colorScheme.primary
+                    : isDark ? Colors.white : Colors.black87,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required ThemeData theme,
+    required bool isDark,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriverStatusCard(ThemeData theme, bool isDark) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.sensors,
+                color: Colors.green,
+                size: 20,
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Driver Monitoring Active',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Tracking your driving patterns',
+                    style: TextStyle(
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => Get.toNamed(Routes.driverBehaviorScreen),
+              child: Text('View'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -311,7 +667,7 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   // Build route preview card
-  Widget _buildRoutePreviewCard() {
+  Widget _buildRoutePreviewCard(ThemeData theme, bool isDark) {
     if (_selectedDestination == null || controller.currentRoute.value == null) {
       return const SizedBox.shrink();
     }
@@ -321,7 +677,7 @@ class _MapsTabState extends State<MapsTab> {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -332,7 +688,7 @@ class _MapsTabState extends State<MapsTab> {
             // Destination name
             Text(
               _selectedDestination!.name,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
@@ -344,107 +700,172 @@ class _MapsTabState extends State<MapsTab> {
             Text(
               _selectedDestination!.address,
               style: TextStyle(
-                color: Colors.grey[600],
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
                 fontSize: 14,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
 
-            const SizedBox(height: 12),
+            SizedBox(height: 16),
 
             // Route info
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Distance
-                Row(
-                  children: [
-                    const Icon(Icons.directions_car, size: 16, color: AppColors.blue),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDistance(route.distance),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  // Distance
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.straighten,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Distance',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _formatDistance(route.distance),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
 
-                // Duration
-                Row(
-                  children: [
-                    const Icon(Icons.access_time, size: 16, color: AppColors.blue),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDuration(route.duration),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
+                  // Duration
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Duration',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _formatDuration(route.duration),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
 
-                // ETA
-                Row(
-                  children: [
-                    const Icon(Icons.flag, size: 16, color: Colors.green),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatETA(route.duration),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ],
+                  // ETA
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.flag,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'ETA',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _formatETA(route.duration),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
 
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
 
             // Action buttons
             Row(
               children: [
-                // Save button
-                OutlinedButton.icon(
-                  onPressed: () {
-                    _showSavePlaceDialog(_selectedDestination!);
-                  },
-                  icon: const Icon(Icons.star_border),
-                  label: const Text('Save'),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _showSavePlaceDialog(_selectedDestination!);
+                    },
+                    icon: Icon(Icons.star_border),
+                    label: Text('Save'),
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
-
-                const SizedBox(width: 8),
-
-                // Close button
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedDestination = null;
-                      _markers.clear();
-                      _polylines.clear();
-                    });
-                    controller.currentRoute.value = null;
-                  },
-                  icon: const Icon(Icons.close),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.grey[200],
-                    shape: const CircleBorder(),
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      controller.startNavigation();
+                      Get.toNamed(Routes.navigationScreen);
+                    },
+                    icon: Icon(Icons.navigation),
+                    label: Text('Start'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
                 ),
               ],
             ),
 
-            ElevatedButton.icon(
-              onPressed: () {
-                controller.startNavigation();
-                Get.toNamed(Routes.navigationScreen);
-              },
-              icon: const Icon(Icons.navigation),
-              label: const Text('Start'),
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            SizedBox(height: 8),
+
+            // Close button
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _selectedDestination = null;
+                    _markers.clear();
+                    _polylines.clear();
+                  });
+                  controller.currentRoute.value = null;
+                },
+                icon: Icon(Icons.close),
+                label: Text('Close'),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
               ),
             ),
@@ -458,37 +879,52 @@ class _MapsTabState extends State<MapsTab> {
   void _showSavePlaceDialog(SearchResult destination) {
     final TextEditingController nameController = TextEditingController(text: destination.name);
     String selectedCategory = 'other';
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     Get.dialog(
       AlertDialog(
-        title: const Text('Save Place'),
+        title: Text('Save Place'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Name',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: isDark ? Color(0xFF2C2C2C) : Colors.grey[100],
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: selectedCategory,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Category',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: isDark ? Color(0xFF2C2C2C) : Colors.grey[100],
               ),
               items: controller.getPlaceCategories().map((category) {
                 return DropdownMenuItem<String>(
                   value: category['id'],
                   child: Row(
                     children: [
-                      Icon(IconData(
-                        category['icon'].codePointAt(0),
-                        fontFamily: 'MaterialIcons',
-                      )),
-                      const SizedBox(width: 8),
+                      Icon(
+                        IconData(
+                          category['icon'].codePointAt(0),
+                          fontFamily: 'MaterialIcons',
+                        ),
+                        color: theme.colorScheme.primary,
+                      ),
+                      SizedBox(width: 8),
                       Text(category['name']),
                     ],
                   ),
@@ -503,7 +939,7 @@ class _MapsTabState extends State<MapsTab> {
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -515,10 +951,25 @@ class _MapsTabState extends State<MapsTab> {
                 category: selectedCategory,
               );
               Get.back();
+
+              // Show success message
+              Get.snackbar(
+                'Place Saved',
+                'Successfully added to your saved places',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.green,
+                colorText: Colors.white,
+                margin: EdgeInsets.all(16),
+                borderRadius: 8,
+                duration: Duration(seconds: 2),
+              );
             },
-            child: const Text('Save'),
+            child: Text('Save'),
           ),
         ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
     );
   }
@@ -550,10 +1001,14 @@ class _MapsTabState extends State<MapsTab> {
     final now = DateTime.now();
     final arrival = now.add(Duration(seconds: seconds.toInt()));
 
-    return '${arrival.hour}:${arrival.minute.toString().padLeft(2, '0')}';
+    String period = arrival.hour >= 12 ? 'PM' : 'AM';
+    int hour = arrival.hour > 12 ? arrival.hour - 12 : (arrival.hour == 0 ? 12 : arrival.hour);
+    String minute = arrival.minute.toString().padLeft(2, '0');
+
+    return '$hour:$minute $period';
   }
 
-  Widget _buildRoutePreviewPanel() {
+  Widget _buildRoutePreviewPanel(ThemeData theme, bool isDark) {
     final route = controller.currentRoute.value!;
 
     // Format distance and duration
@@ -587,224 +1042,258 @@ class _MapsTabState extends State<MapsTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                route.endAddress.isEmpty ? 'Destination' : route.endAddress,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.directions_car, size: 20, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Text(
-                    distance,
-                    style: const TextStyle(
-                      fontSize: 16,
+          Text(
+          route.endAddress.isEmpty ? 'Destination' : route.endAddress,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          SizedBox(height: 12),
+          Container(
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    Icon(
+                      Icons.straighten,
+                      color: theme.colorScheme.primary,
+                      size: 20,
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(Icons.access_time, size: 20, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Text(
-                    duration,
-                    style: const TextStyle(
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  TextButton.icon(
-                    icon: const Icon(Icons.favorite_border),
-                    label: const Text('Save'),
-                    onPressed: () {
-                      _saveDestination();
-                    },
-                  ),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.navigation),
-                    label: const Text('Start Navigation'),
-                    onPressed: () {
-                      _startNavigation();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                    SizedBox(height: 4),
+                    Text(
+                      distance,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
                     ),
-                  ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.close),
-                    label: const Text('Cancel'),
-                    onPressed: () {
-                      _cancelRoutePreview();
-                    },
-                  ),
-                ],
-              ),
-            ],
+                    Text(
+                      'Distance',
+                      style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      duration,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      'Duration',
+                      style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Icon(
+                      Icons.flag,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      _formatETA(route.duration),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      'ETA',
+                      style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 16),
+          Row(
+              children: [
+          Expanded(
+          child: OutlinedButton.icon(
+          icon: Icon(Icons.star_border),
+          label: Text('Save'),
+          onPressed: _saveDestination,
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.symmetric(vertical: 12),
           ),
         ),
       ),
+      SizedBox(width: 12),
+      Expanded(
+        child: ElevatedButton.icon(
+        icon: Icon(Icons.navigation),
+        label: Text('Start'),
+        onPressed: _startNavigation,
+        style: ElevatedButton.styleFrom(
+          padding: EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    ),
+    ],
+    ),
+    SizedBox(height: 8),
+    Center(
+    child: TextButton.icon(
+    icon: Icon(Icons.close),
+    label: Text('Cancel'),
+    onPressed: _cancelRoutePreview,
+    style: TextButton.styleFrom(
+    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    ),
+    ),
+    ),
+    ],
+    ),
+    ),
+    ),
     );
   }
 
-  Widget _buildDriverBehaviorStatus() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
+  void _showMapStyleOptions() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    Get.bottomSheet(
+      Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? Color(0xFF2C2C2C) : Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              behaviorController.isMonitoring.value
-                  ? Icons.sensors
-                  : Icons.sensors_off,
-              color: behaviorController.isMonitoring.value
-                  ? Colors.green
-                  : Colors.grey,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
             Text(
-              behaviorController.isMonitoring.value
-                  ? 'Monitoring Active'
-                  : 'Monitoring Off',
+              'Map Style',
               style: TextStyle(
-                fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: behaviorController.isMonitoring.value
-                    ? Colors.green
-                    : Colors.grey,
+                fontSize: 18,
               ),
+            ),
+            SizedBox(height: 16),
+            ListTile(
+              leading: Icon(
+                Icons.map,
+                color: theme.colorScheme.primary,
+              ),
+              title: Text('Standard'),
+              trailing: Radio<int>(
+                value: 0,
+                groupValue: 0,
+                onChanged: (value) {
+                  Get.back();
+                  setState(() {
+                    _currentMapType = MapType.normal;
+                  });
+                  _updateMapStyle(isDark);
+                },
+              ),
+              onTap: () {
+                Get.back();
+                setState(() {
+                  _currentMapType = MapType.normal;
+                });
+                _updateMapStyle(isDark);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.satellite,
+                color: theme.colorScheme.primary,
+              ),
+              title: Text('Satellite'),
+              trailing: Radio<int>(
+                value: 1,
+                groupValue: 0,
+                onChanged: (value) {
+                  Get.back();
+                  setState(() {
+                    _currentMapType = MapType.satellite;
+                  });
+                },
+              ),
+              onTap: () {
+                Get.back();
+                setState(() {
+                  _currentMapType = MapType.satellite;
+                });
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.terrain,
+                color: theme.colorScheme.primary,
+              ),
+              title: Text('Terrain'),
+              trailing: Radio<int>(
+                value: 2,
+                groupValue: 0,
+                onChanged: (value) {
+                  Get.back();
+                  setState(() {
+                    _currentMapType = MapType.terrain;
+                  });
+                },
+              ),
+              onTap: () {
+                Get.back();
+                setState(() {
+                  _currentMapType = MapType.terrain;
+                });
+              },
+            ),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Get.back(),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('Close'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
+      isScrollControlled: true,
+      enableDrag: true,
     );
-  }
-
-  void _onMapCreated(GoogleMapController controller) {
-    mapController = controller;
-    setState(() {
-      _isInitialized = true;
-    });
-  }
-
-  Future<void> _getDirectionsToPoint(LatLng destination, SearchResult location) async {
-    if (controller.currentLocation.value == null) return;
-
-    // Show loading indicator
-    Get.dialog(
-      Dialog(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text('Finding route...'),
-            ],
-          ),
-        ),
-      ),
-      barrierDismissible: false,
-    );
-
-    try {
-      // Get current location
-      LatLng origin = LatLng(
-        controller.currentLocation.value!.latitude,
-        controller.currentLocation.value!.longitude,
-      );
-
-      // Get directions
-      NavigationRoute? route = await _googleMapsService.getDirections(origin, destination);
-
-      if (route != null) {
-        controller.currentRoute.value = route;
-
-        // Draw route on map
-        if (mapController != null) {
-          _drawRouteOnMap(route);
-        }
-
-        // Show route preview
-        setState(() {
-          _showingRoutePreview = true;
-        });
-      } else {
-        CustomSnackBar.showErrorSnackbar(
-          message: 'Could not find a route to the destination',
-        );
-      }
-    } catch (e) {
-      print('Error getting directions: $e');
-    } finally {
-      // Close loading dialog
-      Get.back();
-    }
-  }
-
-  void _goToSearchScreen() async {
-    // Navigate to search screen
-    final result = await Get.to(() => SearchScreen());
-
-    // If a place was selected, get directions to it
-    if (result != null && result is SearchResult) {
-      LatLng destination = LatLng(result.latitude, result.longitude);
-
-      // Add a marker at the destination
-      if (_destinationMarker != null) {
-        mapController!.dispose();
-      }
-
-      _destinationMarker = Marker(
-        markerId: const MarkerId('destination'),
-        position: destination,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      );
-
-      // Get directions
-      await _getDirectionsToPoint(destination, result);
-    }
-  }
-
-  void _goToSavedPlacesScreen() async {
-    // Navigate to saved places screen
-    final result = await Get.to(() => SavedPlacesScreen());
-
-    // If a place was selected, get directions to it
-    if (result != null && result is SearchResult) {
-      LatLng destination = LatLng(result.latitude, result.longitude);
-
-      // Add a marker at the destination
-      if (_destinationMarker != null) {
-        mapController!.dispose();
-      }
-
-      _destinationMarker = Marker(
-        markerId: const MarkerId('destination'),
-        position: destination,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      );
-
-      // Get directions
-      await _getDirectionsToPoint(destination, result);
-    }
   }
 
   void _centerOnCurrentLocation() {
@@ -816,7 +1305,7 @@ class _MapsTabState extends State<MapsTab> {
               controller.currentLocation.value!.latitude,
               controller.currentLocation.value!.longitude,
             ),
-            zoom: 15.0,
+            zoom: 16.0,
           ),
         ),
       );
@@ -827,22 +1316,62 @@ class _MapsTabState extends State<MapsTab> {
     if (controller.currentRoute.value == null) return;
 
     // Show a dialog to get the name for this place
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final TextEditingController nameController = TextEditingController();
+    String selectedCategory = 'other';
+
     Get.dialog(
       AlertDialog(
-        title: const Text('Save Place'),
+        title: Text('Save Place'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              decoration: const InputDecoration(
+              controller: nameController,
+              decoration: InputDecoration(
                 labelText: 'Name',
                 hintText: 'Home, Work, etc.',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: isDark ? Color(0xFF2C2C2C) : Colors.grey[100],
               ),
-              onSubmitted: (value) {
-                if (value.isNotEmpty) {
-                  _addToFavorites(value);
-                  Get.back();
-                }
+            ),
+            SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: selectedCategory,
+              decoration: InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: isDark ? Color(0xFF2C2C2C) : Colors.grey[100],
+              ),
+              items: controller.getPlaceCategories().map((category) {
+                return DropdownMenuItem<String>(
+                  value: category['id'],
+                  child: Row(
+                    children: [
+                      Icon(
+                        IconData(
+                          category['icon'].codePointAt(0),
+                          fontFamily: 'MaterialIcons',
+                        ),
+                        color: theme.colorScheme.primary,
+                      ),
+                      SizedBox(width: 8),
+                      Text(category['name']),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                selectedCategory = value!;
               },
             ),
           ],
@@ -850,25 +1379,37 @@ class _MapsTabState extends State<MapsTab> {
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
-          TextButton(
-            child: const Text('Save'),
+          ElevatedButton(
             onPressed: () {
-              // Get the text from the field and save
-              final TextEditingController controller = TextEditingController();
-              if (controller.text.isNotEmpty) {
-                _addToFavorites(controller.text);
+              if (nameController.text.isEmpty) {
+                Get.snackbar(
+                  'Error',
+                  'Please enter a name for this place',
+                  snackPosition: SnackPosition.BOTTOM,
+                  backgroundColor: Colors.red,
+                  colorText: Colors.white,
+                  margin: EdgeInsets.all(16),
+                  borderRadius: 8,
+                );
+                return;
               }
+
+              _addToFavorites(nameController.text, selectedCategory);
               Get.back();
             },
+            child: Text('Save'),
           ),
         ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
     );
   }
 
-  void _addToFavorites(String name) {
+  void _addToFavorites(String name, String category) {
     if (controller.currentRoute.value == null) return;
 
     final route = controller.currentRoute.value!;
@@ -877,6 +1418,19 @@ class _MapsTabState extends State<MapsTab> {
       route.endLongitude,
       name,
       route.endAddress,
+      category: category,
+    );
+
+    // Show success message
+    Get.snackbar(
+      'Place Saved',
+      'Successfully added to your saved places',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+      margin: EdgeInsets.all(16),
+      borderRadius: 8,
+      duration: Duration(seconds: 2),
     );
   }
 
@@ -920,7 +1474,7 @@ class _MapsTabState extends State<MapsTab> {
       Polyline(
         polylineId: const PolylineId('route'),
         points: points,
-        color: Colors.blue,
+        color: Theme.of(context).colorScheme.primary,
         width: 5,
       ),
     };
@@ -965,17 +1519,6 @@ class _MapsTabState extends State<MapsTab> {
     );
   }
 
-  LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
-    double? sLat, sLng, nLat, nLng;
-    for (LatLng latLng in list) {
-      sLat = sLat == null || latLng.latitude < sLat ? latLng.latitude : sLat;
-      sLng = sLng == null || latLng.longitude < sLng ? latLng.longitude : sLng;
-      nLat = nLat == null || latLng.latitude > nLat ? latLng.latitude : nLat;
-      nLng = nLng == null || latLng.longitude > nLng ? latLng.longitude : nLng;
-    }
-    return LatLngBounds(southwest: LatLng(sLat!, sLng!), northeast: LatLng(nLat!, nLng!));
-  }
-
   Future<void> getDirections(LatLng origin, LatLng destination) async {
     try {
       // Get directions
@@ -1007,6 +1550,202 @@ class _MapsTabState extends State<MapsTab> {
     setState(() {
       _showTraffic = !_showTraffic;
     });
-    mapController?.setMapStyle(null);
+  }
+
+  void _updateMapStyle(bool isDark) {
+    if (mapController == null) return;
+
+    if (isDark) {
+      mapController!.setMapStyle('''
+      [
+        {
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#212121"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.icon",
+          "stylers": [
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#757575"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.text.stroke",
+          "stylers": [
+            {
+              "color": "#212121"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#757575"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative.country",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#9e9e9e"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative.land_parcel",
+          "stylers": [
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative.locality",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#bdbdbd"
+            }
+          ]
+        },
+        {
+          "featureType": "poi",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#757575"
+            }
+          ]
+        },
+        {
+          "featureType": "poi.park",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#181818"
+            }
+          ]
+        },
+        {
+          "featureType": "poi.park",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#616161"
+            }
+          ]
+        },
+        {
+          "featureType": "poi.park",
+          "elementType": "labels.text.stroke",
+          "stylers": [
+            {
+              "color": "#1b1b1b"
+            }
+          ]
+        },
+        {
+          "featureType": "road",
+          "elementType": "geometry.fill",
+          "stylers": [
+            {
+              "color": "#2c2c2c"
+            }
+          ]
+        },
+        {
+          "featureType": "road",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#8a8a8a"
+            }
+          ]
+        },
+        {
+          "featureType": "road.arterial",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#373737"
+            }
+          ]
+        },
+        {
+          "featureType": "road.highway",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#3c3c3c"
+            }
+          ]
+        },
+        {
+          "featureType": "road.highway.controlled_access",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#4e4e4e"
+            }
+          ]
+        },
+        {
+          "featureType": "road.local",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#616161"
+            }
+          ]
+        },
+        {
+          "featureType": "transit",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#757575"
+            }
+          ]
+        },
+        {
+          "featureType": "water",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#000000"
+            }
+          ]
+        },
+        {
+          "featureType": "water",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#3d3d3d"
+            }
+          ]
+        }
+      ]
+      ''');
+    } else {
+      mapController!.setMapStyle(null); // Reset to default style
+    }
   }
 }

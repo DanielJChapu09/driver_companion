@@ -186,6 +186,64 @@ class DriverBehaviorController extends GetxController {
     }
   }
 
+  // Public methods for loading data
+  Future<void> loadDriverScore() async {
+    await _loadDriverData();
+  }
+
+  Future<void> loadRecentTrips() async {
+    if (_userId == null) return;
+
+    isLoading.value = true;
+
+    try {
+      // Load recent trips
+      QuerySnapshot tripsSnapshot = await _firestore
+          .collection('drivingTrips')
+          .where('userId', isEqualTo: _userId)
+          .where('isCompleted', isEqualTo: true)
+          .orderBy('endTime', descending: true)
+          .limit(10)
+          .get();
+
+      List<DrivingTrip> trips = [];
+      for (var doc in tripsSnapshot.docs) {
+        trips.add(DrivingTrip.fromJson(doc.data() as Map<String, dynamic>));
+      }
+      recentTrips.value = trips;
+    } catch (e) {
+      DevLogs.logError('Error loading recent trips: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> loadRecentEvents() async {
+    if (_userId == null || recentTrips.isEmpty) return;
+
+    isLoading.value = true;
+
+    try {
+      QuerySnapshot eventsSnapshot = await _firestore
+          .collection('drivingEvents')
+          .where('tripId', whereIn: recentTrips.map((t) => t.id).toList())
+          .where('severity', whereIn: ['high', 'critical'])
+          .orderBy('timestamp', descending: true)
+          .limit(20)
+          .get();
+
+      List<DrivingEvent> events = [];
+      for (var doc in eventsSnapshot.docs) {
+        events.add(DrivingEvent.fromJson(doc.data() as Map<String, dynamic>));
+      }
+      recentEvents.value = events;
+    } catch (e) {
+      DevLogs.logError('Error loading recent events: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   // Update feedback settings
   void updateFeedbackSettings({
     bool? voiceFeedback,
@@ -256,4 +314,3 @@ class DriverBehaviorController extends GetxController {
     super.onClose();
   }
 }
-
