@@ -15,15 +15,25 @@ abstract class Routes {
   static const arExamplesScreen = "/arExamples";
 
 
-  static const serviceLocator = "/serviceLocator";
+  static const serviceLocatorScreen = "/serviceLocator";
   static const vehicleDetails = "/vehicleDetails";
   static const driverAIScreen = "/driverAI";
-  static const community = "/community";
+  static const communityScreen = "/community";
   static const trends = "/trends";
-  static const driverBehavior = "/driverBehavior";
+  static const driverBehaviorScreen = "/driverBehavior";
+  static const tripDetailsScreen = "/tripDetails";
   static const communityMapScreen = "/communityMap";
   static const createNotificationScreen = "/createNotification";
   static const searchScreen = "/search";
   static const savedPlacesScreen = "/savedPlaces";
+  static const profileScreen = "/profile";
+  static const settingsScreen = "/settings";
+  static const aboutScreen = "/about";
+  static const helpScreen = "/help";
+  static const privacyPolicyScreen = "/privacyPolicy";
+  static const termsAndConditionsScreen = "/termsAndConditions";
+  static const notificationsScreen = "/notifications";
+  static const notificationDetailsScreen = "/notificationDetails";
+  static const driverInsightsScreen = '/driver-insights-screen';
 }
 

@@ -67,6 +67,11 @@ class DrivingTrip {
     return (events.length / distanceTraveled).toDouble();
   }
 
+  // Get total number of events
+  int get eventsCount {
+    return events.length;
+  }
+
   factory DrivingTrip.fromJson(Map<String, dynamic> json) {
     List<DrivingEvent> eventsList = [];
     if (json['events'] != null) {
@@ -122,4 +127,3 @@ class DrivingTrip {
     };
   }
 }
-
