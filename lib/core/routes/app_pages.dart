@@ -77,7 +77,7 @@ class AppPages {
     ),
 
     GetPage(
-        name: Routes.serviceLocator,
+        name: Routes.serviceLocatorScreen,
         // page: ()=> ServiceLocator(),
         page: ()=> ServiceLocatorScreen(apiKey: APIKeys.GGOOGLEMAPSAPIKEY,),
     ),
@@ -88,7 +88,7 @@ class AppPages {
     ),
 
     GetPage(
-        name: Routes.community,
+        name: Routes.communityScreen,
         page: ()=> CommunityScreen(),
     ),
 
@@ -98,7 +98,7 @@ class AppPages {
     ),
 
     GetPage(
-        name: Routes.driverBehavior,
+        name: Routes.driverBehaviorScreen,
         page: ()=> DriverBehaviorScreen(),
     ),
 
