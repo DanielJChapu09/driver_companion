@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 
@@ -36,8 +37,8 @@ class DriverBehaviorController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Set default user ID (in a real app, this would come from authentication)
-    _userId = 'default_user';
+
+    _userId = FirebaseAuth.instance.currentUser?.uid;
     _initializeServices();
   }
 
