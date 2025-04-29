@@ -16,7 +16,8 @@ class DriverBehaviorScreen extends StatefulWidget {
   State<DriverBehaviorScreen> createState() => _DriverBehaviorScreenState();
 }
 
-class _DriverBehaviorScreenState extends State<DriverBehaviorScreen> with SingleTickerProviderStateMixin {
+// Changed from SingleTickerProviderStateMixin to TickerProviderStateMixin
+class _DriverBehaviorScreenState extends State<DriverBehaviorScreen> with TickerProviderStateMixin {
   late TabController _tabController;
   final DriverBehaviorController controller = Get.find<DriverBehaviorController>();
 
