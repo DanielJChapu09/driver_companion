@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:mymaptest/config/confidential/apikeys.dart';
-import 'package:mymaptest/config/theme/app_colors.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
@@ -15,8 +13,7 @@ import '../../navigation/model/route_model.dart';
 import '../../navigation/model/search_result_model.dart';
 import '../../navigation/service/googlemaps_service.dart';
 import '../../navigation/view/navigation_screen.dart';
-import '../../navigation/view/saved_places_screen.dart';
-import '../../navigation/view/search_screen.dart';
+
 
 class MapsTab extends StatefulWidget {
   const MapsTab({super.key});
@@ -1542,7 +1539,7 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
         );
       }
     } catch (e) {
-      print('Error getting directions: $e');
+      DevLogs.logError('Error getting directions: $e');
     }
   }
 

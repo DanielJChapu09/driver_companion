@@ -19,15 +19,23 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   late TabController _tabController;
   bool _darkMode = false;
 
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     controller.loadSavedPlaces();
+    // Remove MediaQuery access from here
+  }
 
-    // Check system brightness to set initial dark mode
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check system brightness here instead
     final brightness = MediaQuery.of(context).platformBrightness;
-    _darkMode = brightness == Brightness.dark;
+    setState(() {
+      _darkMode = brightness == Brightness.dark;
+    });
   }
 
   @override
