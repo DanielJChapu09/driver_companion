@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
 import 'package:mymaptest/core/utils/logs.dart';
+import 'package:mymaptest/features/community/controller/community_controller.dart';
 import '../controller/navigation_controller.dart';
 import '../model/route_model.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -18,6 +19,7 @@ class NavigationScreen extends StatefulWidget {
 
 class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
   final NavigationController controller = Get.find<NavigationController>();
+  final CommunityController communityController = Get.find<CommunityController>();
   late FlutterTts flutterTts;
   bool _darkMode = false;
   bool _showFullInstructions = false;
@@ -30,6 +32,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
   Timer? _locationUpdateTimer;
+  bool _mapInitialized = false;
 
   @override
   void initState() {
@@ -46,6 +49,13 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     ever(controller.currentInstruction, (instruction) {
       if (controller.voiceGuidanceEnabled.value && instruction.isNotEmpty) {
         _speakInstruction(instruction);
+      }
+    });
+
+    // Listen for route changes to update polylines
+    ever(controller.currentRoute, (route) {
+      if (route != null && mapController != null && _mapInitialized) {
+        _updatePolylines(route);
       }
     });
 
@@ -185,6 +195,232 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     mapController!.setMapStyle(mapStyle);
   }
 
+  void _updatePolylines(NavigationRoute route) {
+    try {
+      // Decode polyline
+      List<LatLng> points = controller.mapsService.decodePolyline(route.geometry);
+
+      if (points.isEmpty) {
+        DevLogs.logWarning('Empty polyline points decoded from geometry');
+        return;
+      }
+
+      // Create a set to hold the new polylines
+      Set<Polyline> newPolylines = {
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: points,
+          color: Colors.blue,
+          width: 5,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      };
+
+      // Add alternative routes if available
+      for (int i = 0; i < controller.alternativeRoutes.length; i++) {
+        var altRoute = controller.alternativeRoutes[i];
+        List<LatLng> altPoints = controller.mapsService.decodePolyline(altRoute.geometry);
+
+        if (altPoints.isNotEmpty) {
+          newPolylines.add(
+            Polyline(
+              polylineId: PolylineId('alt_route_$i'),
+              points: altPoints,
+              color: Colors.grey,
+              width: 3,
+              patterns: [
+                PatternItem.dash(20),
+                PatternItem.gap(10),
+              ],
+            ),
+          );
+        }
+      }
+
+      // Update the polylines
+      setState(() {
+        _polylines = newPolylines;
+      });
+
+      // Create a set to hold the new markers
+      Set<Marker> newMarkers = {
+        Marker(
+          markerId: const MarkerId('start'),
+          position: LatLng(route.startLatitude, route.startLongitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        ),
+        Marker(
+          markerId: const MarkerId('end'),
+          position: LatLng(route.endLatitude, route.endLongitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        ),
+      };
+
+      // Update the markers
+      setState(() {
+        _markers = newMarkers;
+      });
+
+      // Fit bounds to show the entire route if not in navigation mode
+      if (!controller.isNavigating.value && points.length > 1) {
+        _fitBoundsToRoute(points);
+      }
+    } catch (e) {
+      DevLogs.logError('Error updating polylines: $e');
+    }
+  }
+
+  void _fitBoundsToRoute(List<LatLng> points) {
+    if (mapController == null || points.isEmpty) return;
+
+    try {
+      double minLat = points.map((p) => p.latitude).reduce((a, b) => a < b ? a : b);
+      double maxLat = points.map((p) => p.latitude).reduce((a, b) => a > b ? a : b);
+      double minLng = points.map((p) => p.longitude).reduce((a, b) => a < b ? a : b);
+      double maxLng = points.map((p) => p.longitude).reduce((a, b) => a > b ? a : b);
+
+      LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          50.0, // padding
+        ),
+      );
+    } catch (e) {
+      DevLogs.logError('Error fitting bounds to route: $e');
+    }
+  }
+
+  void _showAlertDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(
+          color: _darkMode ? Colors.grey[900] : Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _darkMode ? Colors.grey[850] : Colors.grey[100],
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Report Road Condition',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _darkMode ? Colors.white : Colors.black,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: _darkMode ? Colors.white : Colors.black),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'What would you like to report?',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _darkMode ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      _buildAlertTypeGrid(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlertTypeGrid() {
+    final List<Map<String, dynamic>> alertTypes = [
+      {'type': 'traffic', 'icon': Icons.traffic, 'color': Colors.orange, 'label': 'Traffic'},
+      {'type': 'accident', 'icon': Icons.car_crash, 'color': Colors.red, 'label': 'Accident'},
+      {'type': 'police', 'icon': Icons.local_police, 'color': Colors.blue, 'label': 'Police'},
+      {'type': 'hazard', 'icon': Icons.warning, 'color': Colors.amber, 'label': 'Hazard'},
+      {'type': 'construction', 'icon': Icons.construction, 'color': Colors.yellow[800], 'label': 'Construction'},
+      {'type': 'other', 'icon': Icons.info, 'color': Colors.teal, 'label': 'Other'},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 1.0,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: alertTypes.length,
+      itemBuilder: (context, index) {
+        final type = alertTypes[index];
+        return InkWell(
+          onTap: () {
+            Navigator.pop(context);
+            Get.toNamed('/create-notification', arguments: {'type': type['type']});
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: _darkMode ? Colors.grey[800] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: type['color'],
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  type['icon'],
+                  color: type['color'],
+                  size: 32,
+                ),
+                SizedBox(height: 8),
+                Text(
+                  type['label'],
+                  style: TextStyle(
+                    color: _darkMode ? Colors.white : Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -207,6 +443,12 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
               onMapCreated: (GoogleMapController controller) {
                 mapController = controller;
                 _updateMapStyle();
+                _mapInitialized = true;
+
+                // If route is already available, update polylines
+                if (this.controller.currentRoute.value != null) {
+                  _updatePolylines(this.controller.currentRoute.value!);
+                }
               },
               myLocationEnabled: true,
               myLocationButtonEnabled: false,
@@ -322,6 +564,32 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                     _updateCameraPosition();
                   }
                 },
+              ),
+            ),
+          ),
+
+          // Alert button
+          Positioned(
+            bottom: 220,
+            right: 10,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.white,
+                ),
+                onPressed: _showAlertDialog,
               ),
             ),
           ),
@@ -534,9 +802,6 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   setState(() {
                     _showTraffic = !_showTraffic;
                   });
-                  if (mapController != null) {
-                   // mapController!.setTrafficEnabled(_showTraffic);
-                  }
                 },
                 isActive: _showTraffic,
               ),
@@ -548,12 +813,9 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 },
               ),
               _buildControlButton(
-                icon: Icons.stop,
-                label: 'End',
-                onTap: () {
-                  controller.stopNavigation();
-                  Get.back();
-                },
+                icon: Icons.warning_amber_rounded,
+                label: 'Alert',
+                onTap: _showAlertDialog,
                 color: Colors.red,
               ),
             ],
@@ -784,9 +1046,6 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 setState(() {
                   _showTraffic = value;
                 });
-                if (mapController != null) {
-                 // mapController!.setTrafficEnabled(_showTraffic);
-                }
               },
             ),
             SwitchListTile(

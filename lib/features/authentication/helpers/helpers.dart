@@ -165,6 +165,5 @@ class AuthHelpers {
         message: 'Signing out',
       ),
     );
-
   }
 }
