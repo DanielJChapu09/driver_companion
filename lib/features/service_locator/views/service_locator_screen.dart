@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/core/utils/logs.dart';
+import 'package:mymaptest/features/service_locator/views/service_detail_screen.dart';
 import '../controller/service_locator_controller.dart';
 import '../model/service_location_model.dart';
+import '../../../widgets/circular_loader/circular_loader.dart';
 
 class ServiceLocatorScreen extends StatefulWidget {
   final String apiKey;
@@ -25,6 +27,27 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
   void initState() {
     super.initState();
     controller = Get.put(ServiceLocatorController(apiKey: widget.apiKey));
+
+    // Add a small delay to ensure the map is properly initialized
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (controller.nearbyServices.isNotEmpty) {
+        controller.searchServicesByCategory(controller.selectedCategory.value);
+      }
+    });
+  }
+
+  // Add a method to refresh markers when returning to the screen
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // This will be called when returning to the screen
+    if (controller.mapController.value != null) {
+      if (controller.nearbyServices.isNotEmpty) {
+        controller.addServiceMarkersToMap(controller.nearbyServices);
+      } else if (controller.searchResults.isNotEmpty) {
+        controller.addServiceMarkersToMap(controller.searchResults);
+      }
+    }
   }
 
   @override
@@ -76,7 +99,24 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
               ),
               onChanged: (value) {
                 if (value.length > 2) {
-                  controller.searchServicesByKeyword(value);
+                  // Show loading dialog
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext context) {
+                      return const CustomLoader(message: "Searching services");
+                    },
+                  );
+
+                  controller.searchServicesByKeyword(value).then((_) {
+                    // Close loading dialog
+                    Navigator.pop(context);
+
+                    // Show results bottom sheet
+                    if (controller.searchResults.isNotEmpty) {
+                      _showServicesBottomSheet(controller.searchResults);
+                    }
+                  });
                 }
               },
             ),
@@ -141,6 +181,7 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
     );
   }
 
+  // Modify the _buildCategoryChips method to ensure markers are displayed
   Widget _buildCategoryChips() {
     final categories = controller.getServiceCategories();
 
@@ -157,10 +198,40 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
               selected: controller.selectedCategory.value == entry.key,
               onSelected: (selected) {
                 if (selected) {
-                  controller.searchServicesByCategory(entry.key);
+                  // Show loading dialog
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext context) {
+                      return const CustomLoader(message: "Finding services");
+                    },
+                  );
+
+                  controller.searchServicesByCategory(entry.key).then((_) {
+                    // Close loading dialog
+                    Navigator.of(context, rootNavigator: true).pop();
+
+                    // Force refresh markers
+                    if (controller.mapController.value != null && controller.nearbyServices.isNotEmpty) {
+                      controller.addServiceMarkersToMap(controller.nearbyServices);
+                    }
+
+                    // Show results bottom sheet
+                    if (controller.nearbyServices.isNotEmpty) {
+                      _showServicesBottomSheet(controller.nearbyServices);
+                    }
+                  });
                 } else {
                   controller.selectedCategory.value = '';
                   controller.nearbyServices.clear();
+
+                  // Clear markers except user location
+                  if (controller.mapController.value != null) {
+                    Set<Marker> userMarker = controller.markers
+                        .where((m) => m.markerId.value == 'user_location')
+                        .toSet();
+                    controller.markers.value = userMarker;
+                  }
                 }
               },
             )),
@@ -348,6 +419,88 @@ class _ServiceLocatorScreenState extends State<ServiceLocatorScreen> {
         LatLng(service.latitude, service.longitude),
         16.0,
       ),
+    );
+  }
+
+  void _showServicesBottomSheet(List<ServiceLocation> services) {
+    Get.bottomSheet(
+      Container(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${services.length} Services Found',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Get.back(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.4,
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: services.length,
+                itemBuilder: (context, index) {
+                  final service = services[index];
+                  return ListTile(
+                    title: Text(service.name),
+                    subtitle: Text(service.address),
+                    trailing: service.distance != null
+                        ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${service.distance!.toStringAsFixed(1)} km',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (service.duration != null)
+                          Text(
+                            '${service.duration!.toStringAsFixed(0)} min',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                          ),
+                      ],
+                    )
+                        : null,
+                    onTap: () {
+                      Get.back();
+                      // Navigate to service details screen
+                      Get.to(() => ServiceDetailsScreen(service: service));
+
+                      // Center map on the selected service
+                      controller.mapController.value?.animateCamera(
+                        CameraUpdate.newLatLngZoom(
+                          LatLng(service.latitude, service.longitude),
+                          16.0,
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      isScrollControlled: true,
     );
   }
 

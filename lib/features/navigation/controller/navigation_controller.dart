@@ -134,6 +134,11 @@ class NavigationController extends GetxController {
   // Set map controller
   void setMapController(GoogleMapController controller) {
     mapController.value = controller;
+
+    // Refresh polylines when map controller is set
+    if (currentRoute.value != null) {
+      _drawRouteOnMap(currentRoute.value!);
+    }
   }
 
   // Search for places
@@ -349,7 +354,7 @@ class NavigationController extends GetxController {
   }
 
   // Add place to favorites
-  Future<void> addToFavorites(double latitude, double longitude, String name, String address, {String? category}) async {
+  Future<void> addToFavorites(double latitude, double longitude, String name, String address, {String? category, String? notes}) async {
     try {
       Place place = Place(
         id: '',
@@ -358,7 +363,9 @@ class NavigationController extends GetxController {
         latitude: latitude,
         longitude: longitude,
         category: category,
+        notes: notes,
         isFavorite: true,
+        lastVisited: DateTime.now(),
       );
 
       bool added = await _placesService.addFavoritePlace(place);
@@ -404,6 +411,7 @@ class NavigationController extends GetxController {
         address: address,
         latitude: latitude,
         longitude: longitude,
+        lastVisited: DateTime.now(),
       );
 
       await _placesService.addRecentPlace(place);
@@ -523,42 +531,6 @@ class NavigationController extends GetxController {
     );
   }
 
-  // Decode polyline
-  List<LatLng> _decodePolyline(String encoded) {
-    List<LatLng> points = [];
-    int index = 0, len = encoded.length;
-    int lat = 0, lng = 0;
-
-    while (index < len) {
-      int b, shift = 0, result = 0;
-
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-
-      points.add(LatLng(lat / 1E5, lng / 1E5));
-    }
-
-    return points;
-  }
-
   // Get place categories
   List<Map<String, dynamic>> getPlaceCategories() {
     return _placesService.getPlaceCategories();
@@ -631,4 +603,3 @@ class NavigationController extends GetxController {
     }
   }
 }
-

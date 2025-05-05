@@ -6,14 +6,14 @@ import 'driving_event_model.dart';
 class DriverScore {
   final String id;
   final String userId;
-  final double overallScore; // 0-100
-  final Map<String, double> categoryScores; // Individual scores by category
+  final double overallScore;
+  final Map<String, double> categoryScores;
   final int tripsCount;
   final int totalEvents;
-  final double totalDistance; // in kilometers
-  final double totalDuration; // in hours
+  final double totalDistance;
+  final double totalDuration;
   final DateTime lastUpdated;
-  final List<DrivingEvent> recentEvents; // Recent significant events
+  final List<DrivingEvent> recentEvents;
   final Map<String, dynamic>? improvementSuggestions;
 
   DriverScore({
