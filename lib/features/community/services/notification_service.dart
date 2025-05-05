@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/utils/logs.dart';
 import '../model/notifcation_model.dart';
 import '../model/user_location_model.dart';
+import 'dart:async';
 
 class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -78,10 +80,14 @@ class NotificationService {
 
   // Get notifications for a specific city
   Stream<List<RoadNotification>> getNotificationsForCity(String city) {
+    // Get current timestamp minus 24 hours
+    final DateTime twentyFourHoursAgo = DateTime.now().subtract(Duration(hours: 24));
+
     return _firestore
         .collection('roadNotifications')
         .where('city', isEqualTo: city)
         .where('isActive', isEqualTo: true)
+        .where('timestamp', isGreaterThanOrEqualTo: twentyFourHoursAgo.toIso8601String())
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -94,13 +100,15 @@ class NotificationService {
   // Get notifications near a location (within a radius)
   Future<List<RoadNotification>> getNotificationsNearLocation(
       double latitude, double longitude, double radiusInKm) async {
+    // Get current timestamp minus 24 hours
+    final DateTime twentyFourHoursAgo = DateTime.now().subtract(Duration(hours: 24));
+
     // Firestore doesn't support geospatial queries directly
     // So we'll fetch by city and then filter by distance
-
-    // First, get all active notifications
     QuerySnapshot snapshot = await _firestore
         .collection('roadNotifications')
         .where('isActive', isEqualTo: true)
+        .where('timestamp', isGreaterThanOrEqualTo: twentyFourHoursAgo.toIso8601String())
         .orderBy('timestamp', descending: true)
         .get();
 
@@ -179,5 +187,45 @@ class NotificationService {
       throw Exception('Failed to delete notification: $e');
     }
   }
-}
 
+  // Archive old notifications (older than 24 hours)
+  Future<void> archiveOldNotifications() async {
+    try {
+      // Get current timestamp minus 24 hours
+      final DateTime twentyFourHoursAgo = DateTime.now().subtract(Duration(hours: 24));
+
+      // Query for active notifications older than 24 hours
+      QuerySnapshot snapshot = await _firestore
+          .collection('roadNotifications')
+          .where('isActive', isEqualTo: true)
+          .where('timestamp', isLessThan: twentyFourHoursAgo.toIso8601String())
+          .get();
+
+      // Create a batch to update multiple documents
+      WriteBatch batch = _firestore.batch();
+
+      // Add each document to the batch
+      for (DocumentSnapshot doc in snapshot.docs) {
+        batch.update(doc.reference, {'isActive': false});
+      }
+
+      // Commit the batch
+      await batch.commit();
+
+      DevLogs.logError('Archived ${snapshot.docs.length} old notifications');
+    } catch (e) {
+      DevLogs.logError('Error archiving old notifications: $e');
+    }
+  }
+
+  // Schedule periodic archiving of old notifications
+  void scheduleArchiving() {
+    // Run immediately once
+    archiveOldNotifications();
+
+    // Then schedule to run every hour
+    Timer.periodic(Duration(hours: 1), (timer) {
+      archiveOldNotifications();
+    });
+  }
+}
