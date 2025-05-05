@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-import 'package:mymaptest/config/theme/app_colors.dart';
 import '../../../core/routes/app_pages.dart';
 import '../controller/driver_behaviour_controller.dart';
 import '../model/driving_event_model.dart';
@@ -16,7 +15,6 @@ class DriverBehaviorScreen extends StatefulWidget {
   State<DriverBehaviorScreen> createState() => _DriverBehaviorScreenState();
 }
 
-// Changed from SingleTickerProviderStateMixin to TickerProviderStateMixin
 class _DriverBehaviorScreenState extends State<DriverBehaviorScreen> with TickerProviderStateMixin {
   late TabController _tabController;
   final DriverBehaviorController controller = Get.find<DriverBehaviorController>();

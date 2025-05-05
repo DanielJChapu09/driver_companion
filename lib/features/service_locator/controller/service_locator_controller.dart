@@ -8,6 +8,7 @@ import '../service/service_locator_interface.dart';
 import '../service/service_repository_interface.dart';
 import '../service/service_repository.dart';
 import '../service/location_service.dart';
+import '../views/service_detail_screen.dart';
 
 
 class ServiceLocatorController extends GetxController {
@@ -102,13 +103,15 @@ class ServiceLocatorController extends GetxController {
   void setMapController(GoogleMapController controller) {
     mapController.value = controller;
 
-    // Update markers if we have services
-    if (nearbyServices.isNotEmpty) {
-      _addServiceMarkersToMap(nearbyServices);
-    }
-
     // Add user location marker
     _updateUserLocationMarker();
+
+    // Update markers if we have services
+    if (nearbyServices.isNotEmpty) {
+      addServiceMarkersToMap(nearbyServices);
+    } else if (searchResults.isNotEmpty) {
+      addServiceMarkersToMap(searchResults);
+    }
   }
 
   // Search for services by category
@@ -137,7 +140,7 @@ class ServiceLocatorController extends GetxController {
       isLoading.value = false;
 
       // Add markers to map
-      _addServiceMarkersToMap(services);
+      addServiceMarkersToMap(services);
     } catch (e) {
       isLoading.value = false;
       errorMessage.value = 'Failed to search services: $e';
@@ -177,7 +180,7 @@ class ServiceLocatorController extends GetxController {
 
       // Add markers to map if in search mode
       if (services.isNotEmpty) {
-        _addServiceMarkersToMap(services);
+        addServiceMarkersToMap(services);
       }
     } catch (e) {
       isSearching.value = false;
@@ -353,7 +356,7 @@ class ServiceLocatorController extends GetxController {
       isLoading.value = false;
 
       // Add markers to map
-      _addServiceMarkersToMap(services);
+      addServiceMarkersToMap(services);
     } catch (e) {
       isLoading.value = false;
       errorMessage.value = 'Failed to get services along route: $e';
@@ -367,7 +370,7 @@ class ServiceLocatorController extends GetxController {
   }
 
   // Helper method to add service markers to map
-  void _addServiceMarkersToMap(List<ServiceLocation> services) {
+  void addServiceMarkersToMap(List<ServiceLocation> services) {
     if (mapController.value == null) return;
 
     // Clear existing markers except user location
@@ -392,17 +395,21 @@ class ServiceLocatorController extends GetxController {
           infoWindow: InfoWindow(
             title: service.name,
             snippet: service.address,
-            onTap: () {
-              // Navigate to service details
-              _onMarkerTapped(service);
-            },
           ),
           icon: _getMarkerIconForCategory(service.category),
+          onTap: () {
+            // Navigate to service details
+            _onMarkerTapped(service);
+          },
         ),
       );
     }
 
-    markers.value = updatedMarkers;
+    // Force update of markers
+    markers.value = Set<Marker>.from(updatedMarkers);
+
+    // Ensure the map is updated
+    //mapController.value?.setMapStyle();
   }
 
   // Update user location marker
@@ -464,8 +471,15 @@ class ServiceLocatorController extends GetxController {
     addServiceToRecent(service);
 
     // Navigate to service details screen
-    // This would be implemented in your navigation system
-    // For example: Get.toNamed('/service-details', arguments: service);
+    Get.to(() => ServiceDetailsScreen(service: service));
+
+    // Center map on the selected service
+    mapController.value?.animateCamera(
+      CameraUpdate.newLatLngZoom(
+        LatLng(service.latitude, service.longitude),
+        16.0,
+      ),
+    );
   }
 
   // Helper method to update distances for favorites and recents
