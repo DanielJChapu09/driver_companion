@@ -103,10 +103,7 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
                     return Padding(
                       padding: const EdgeInsets.only(right: 8.0),
                       child: FilterChip(
-                        avatar: Icon(IconData(
-                          category['icon'].codePointAt(0),
-                          fontFamily: 'MaterialIcons',
-                        )),
+                        avatar: Icon(category['icon']),  // Just use the IconData directly
                         label: Text(category['name']),
                         selected: selectedCategory == category['id'],
                         onSelected: (selected) {
