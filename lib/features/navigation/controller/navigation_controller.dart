@@ -41,7 +41,9 @@ class NavigationController extends GetxController {
   final RxBool showTraffic = true.obs;
   final RxBool voiceGuidanceEnabled = true.obs;
   final RxList<String> selectedServiceTypes = <String>[].obs;
-  final RxBool showAlternativeRoutes = false.obs;
+  final RxBool showAlternativeRoutes = true.obs; // Default to showing alternative routes
+  final RxInt selectedRouteIndex = 0.obs; // Track which route is currently selected
+  final RxList<Map<String, dynamic>> nearbyServices = <Map<String, dynamic>>[].obs; // Nearby services for the route
 
   // Map controller
   Rx<GoogleMapController?> mapController = Rx<GoogleMapController?>(null);
@@ -137,7 +139,7 @@ class NavigationController extends GetxController {
 
     // Refresh polylines when map controller is set
     if (currentRoute.value != null) {
-      _drawRouteOnMap(currentRoute.value!);
+      _drawRouteOnMap();
     }
   }
 
@@ -174,52 +176,32 @@ class NavigationController extends GetxController {
     }
   }
 
-  // Get directions
+  // Get directions with alternatives
   Future<void> getDirections(LatLng origin, LatLng destination) async {
     isLoading.value = true;
+    alternativeRoutes.clear();
+    nearbyServices.clear();
+    selectedRouteIndex.value = 0;
 
     try {
-      // Get primary route
-      NavigationRoute? route = await mapsService.getDirections(
+      // Get primary route with alternatives
+      List<NavigationRoute> routes = await mapsService.getDirectionsWithAlternatives(
         origin,
         destination,
       );
 
-      if (route != null) {
-        currentRoute.value = route;
+      if (routes.isNotEmpty) {
+        // Set the first route as the current route
+        currentRoute.value = routes[0];
 
-        // Get alternative routes if requested
-        if (showAlternativeRoutes.value) {
-          NavigationRoute? alternativeRoute = await mapsService.getDirections(
-            origin,
-            destination,
-            alternatives: true,
-          );
-
-          if (alternativeRoute != null) {
-            alternativeRoutes.value = [alternativeRoute];
-          } else {
-            alternativeRoutes.clear();
-          }
+        // Add the rest as alternative routes
+        if (routes.length > 1) {
+          alternativeRoutes.value = routes.sublist(1);
         }
 
-        // Check if service types are selected
-        if (selectedServiceTypes.isNotEmpty) {
-          List<NavigationRoute> routesWithServices = await mapsService.getDirectionsWithServiceLocations(
-            origin,
-            destination,
-            selectedServiceTypes,
-          );
-
-          // The first route is the direct route, which we already have
-          if (routesWithServices.length > 1) {
-            alternativeRoutes.value = routesWithServices.sublist(1);
-          }
-        }
-
-        // Draw route on map
+        // Draw routes on map
         if (mapController.value != null) {
-          _drawRouteOnMap(route);
+          _drawRouteOnMap();
         }
       } else {
         CustomSnackBar.showErrorSnackbar(message: 'Could not find a route to the destination');
@@ -230,6 +212,97 @@ class NavigationController extends GetxController {
       isLoading.value = false;
       DevLogs.logError('Error getting directions: $e');
       CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions');
+    }
+  }
+
+  // Get directions with service waypoints
+  Future<void> getDirectionsWithService(LatLng origin, LatLng destination, String serviceType) async {
+    isLoading.value = true;
+
+    try {
+      // Get routes that pass by the selected service type
+      List<NavigationRoute> routesWithServices = await mapsService.getDirectionsWithServiceLocations(
+        origin,
+        destination,
+        [serviceType],
+      );
+
+      if (routesWithServices.isNotEmpty) {
+        // Set the first route as the current route
+        currentRoute.value = routesWithServices[0];
+
+        // Add the rest as alternative routes
+        if (routesWithServices.length > 1) {
+          alternativeRoutes.value = routesWithServices.sublist(1);
+        } else {
+          alternativeRoutes.clear();
+        }
+
+        // Draw routes on map
+        if (mapController.value != null) {
+          _drawRouteOnMap();
+        }
+      } else {
+        CustomSnackBar.showErrorSnackbar(message: 'Could not find routes with the selected service');
+      }
+
+      isLoading.value = false;
+    } catch (e) {
+      isLoading.value = false;
+      DevLogs.logError('Error getting directions with service: $e');
+      CustomSnackBar.showErrorSnackbar(message: 'Failed to get directions with service');
+    }
+  }
+
+  // Find nearby services along the route
+  Future<void> findNearbyServicesAlongRoute(String serviceType) async {
+    if (currentRoute.value == null) return;
+
+    isLoading.value = true;
+    nearbyServices.clear();
+
+    try {
+      // Decode the route polyline to get points along the route
+      List<LatLng> routePoints = mapsService.decodePolyline(currentRoute.value!.geometry);
+
+      // Sample points along the route (every ~5km)
+      List<LatLng> samplePoints = _sampleRoutePoints(routePoints, 5000);
+
+      // For each sample point, search for the service
+      for (LatLng point in samplePoints) {
+        List<SearchResult> services = await mapsService.searchPlaces(
+          '$serviceType near ${point.latitude},${point.longitude}',
+          proximity: point,
+        );
+
+        if (services.isNotEmpty) {
+          // Take the first service location found
+          SearchResult service = services.first;
+
+          nearbyServices.add({
+            'id': service.id,
+            'name': service.name,
+            'address': service.address,
+            'latitude': service.latitude,
+            'longitude': service.longitude,
+            'category': service.category ?? serviceType,
+            'distance': _calculateDistance(
+                point.latitude,
+                point.longitude,
+                service.latitude,
+                service.longitude
+            ),
+          });
+        }
+      }
+
+      // Sort services by distance
+      nearbyServices.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+
+      isLoading.value = false;
+    } catch (e) {
+      isLoading.value = false;
+      DevLogs.logError('Error finding nearby services: $e');
     }
   }
 
@@ -246,10 +319,11 @@ class NavigationController extends GetxController {
 
       if (route != null) {
         currentRoute.value = route;
+        alternativeRoutes.clear();
 
         // Draw route on map
         if (mapController.value != null) {
-          _drawRouteOnMap(route);
+          _drawRouteOnMap();
         }
       } else {
         CustomSnackBar.showErrorSnackbar(message: 'Could not find an optimized route');
@@ -263,6 +337,7 @@ class NavigationController extends GetxController {
     }
   }
 
+  // Get route preview
   Future<void> getRoutePreview(LatLng origin, LatLng destination) async {
     isLoading.value = true;
 
@@ -455,80 +530,192 @@ class NavigationController extends GetxController {
     }
   }
 
-  // Draw route on map
-  void _drawRouteOnMap(NavigationRoute route) {
-    if (mapController.value == null) return;
+  // Draw routes on map
+  void _drawRouteOnMap() {
+    if (mapController.value == null || currentRoute.value == null) return;
 
-    // Decode polyline
-    List<LatLng> points = mapsService.decodePolyline(route.geometry);
+    try {
+      // Create a set to hold the new polylines
+      Set<Polyline> newPolylines = {};
+      Set<Marker> newMarkers = {};
 
-    // Create a set to hold the new polylines
-    Set<Polyline> newPolylines = {
-      Polyline(
-        polylineId: const PolylineId('route'),
-        points: points,
-        color: Colors.blue,
-        width: 5,
-      ),
-    };
+      // Add the main route polyline
+      List<LatLng> mainPoints = mapsService.decodePolyline(currentRoute.value!.geometry);
+      if (mainPoints.isNotEmpty) {
+        newPolylines.add(
+          Polyline(
+            polylineId: const PolylineId('main_route'),
+            points: mainPoints,
+            color: Colors.blue,
+            width: 6,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+          ),
+        );
 
-    // Add alternative routes if available
-    for (int i = 0; i < alternativeRoutes.length; i++) {
-      var altRoute = alternativeRoutes[i];
-      List<LatLng> altPoints = mapsService.decodePolyline(altRoute.geometry);
+        // Add start and end markers
+        newMarkers.add(
+          Marker(
+            markerId: const MarkerId('start'),
+            position: LatLng(currentRoute.value!.startLatitude, currentRoute.value!.startLongitude),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            infoWindow: InfoWindow(title: 'Start', snippet: currentRoute.value!.startAddress),
+          ),
+        );
 
-      newPolylines.add(
-        Polyline(
-          polylineId: PolylineId('alt_route_$i'),
-          points: altPoints,
-          color: Colors.grey,
-          width: 3,
-          patterns: [
-            PatternItem.dash(20),
-            PatternItem.gap(10),
-          ],
+        newMarkers.add(
+          Marker(
+            markerId: const MarkerId('end'),
+            position: LatLng(currentRoute.value!.endLatitude, currentRoute.value!.endLongitude),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: InfoWindow(title: 'Destination', snippet: currentRoute.value!.endAddress),
+          ),
+        );
+      }
+
+      // Add alternative routes
+      for (int i = 0; i < alternativeRoutes.length; i++) {
+        var altRoute = alternativeRoutes[i];
+        List<LatLng> altPoints = mapsService.decodePolyline(altRoute.geometry);
+
+        if (altPoints.isNotEmpty) {
+          newPolylines.add(
+            Polyline(
+              polylineId: PolylineId('alt_route_$i'),
+              points: altPoints,
+              color: Colors.grey,
+              width: 4,
+              patterns: [
+                PatternItem.dash(20),
+                PatternItem.gap(10),
+              ],
+            ),
+          );
+        }
+      }
+
+      // Add service markers if available
+      for (int i = 0; i < nearbyServices.length; i++) {
+        var service = nearbyServices[i];
+        newMarkers.add(
+          Marker(
+            markerId: MarkerId('service_${service['id']}'),
+            position: LatLng(service['latitude'], service['longitude']),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: InfoWindow(
+              title: service['name'],
+              snippet: service['address'],
+            ),
+          ),
+        );
+      }
+
+      // Update the polylines and markers
+      polylines.value = newPolylines;
+      markers.value = newMarkers;
+
+      // Fit bounds to show the entire route if not in navigation mode
+      if (!isNavigating.value && mainPoints.length > 1) {
+        _fitBoundsToRoute(mainPoints);
+      }
+    } catch (e) {
+      DevLogs.logError('Error drawing routes on map: $e');
+    }
+  }
+
+  // Fit map bounds to show the entire route
+  void _fitBoundsToRoute(List<LatLng> points) {
+    if (mapController.value == null || points.isEmpty) return;
+
+    try {
+      double minLat = points.map((p) => p.latitude).reduce(min);
+      double maxLat = points.map((p) => p.latitude).reduce(max);
+      double minLng = points.map((p) => p.longitude).reduce(min);
+      double maxLng = points.map((p) => p.longitude).reduce(max);
+
+      LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      mapController.value!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          50.0, // padding
         ),
       );
+    } catch (e) {
+      DevLogs.logError('Error fitting bounds to route: $e');
     }
+  }
 
-    // Update the polylines
-    polylines.value = newPolylines;
+  // Switch to alternative route
+  void switchToRoute(int index) {
+    if (index == selectedRouteIndex.value) return;
 
-    // Create a set to hold the new markers
-    Set<Marker> newMarkers = {
-      Marker(
-        markerId: const MarkerId('start'),
-        position: LatLng(route.startLatitude, route.startLongitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      ),
-      Marker(
-        markerId: const MarkerId('end'),
-        position: LatLng(route.endLatitude, route.endLongitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      ),
-    };
+    try {
+      NavigationRoute selectedRoute;
 
-    // Update the markers
-    markers.value = newMarkers;
+      if (index == 0) {
+        // User selected the main route
+        if (currentRoute.value == null) return;
+        selectedRoute = currentRoute.value!;
+      } else {
+        // User selected an alternative route
+        int altIndex = index - 1;
+        if (altIndex < 0 || altIndex >= alternativeRoutes.length) return;
+        selectedRoute = alternativeRoutes[altIndex];
+      }
 
-    // Fit bounds to show the entire route
-    LatLngBounds bounds = LatLngBounds(
-      southwest: LatLng(
-        points.map((p) => p.latitude).reduce(min),
-        points.map((p) => p.longitude).reduce(min),
-      ),
-      northeast: LatLng(
-        points.map((p) => p.latitude).reduce(max),
-        points.map((p) => p.longitude).reduce(max),
-      ),
-    );
+      // If we're switching from the main route to an alternative
+      if (selectedRouteIndex.value == 0 && index > 0) {
+        // Store the current main route
+        NavigationRoute mainRoute = currentRoute.value!;
 
-    mapController.value!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        bounds,
-        50.0, // padding
-      ),
-    );
+        // Set the selected alternative as the main route
+        currentRoute.value = selectedRoute;
+
+        // Replace the alternative with the previous main route
+        alternativeRoutes[index - 1] = mainRoute;
+      }
+      // If we're switching from an alternative to the main route
+      else if (selectedRouteIndex.value > 0 && index == 0) {
+        // Store the current alternative route
+        NavigationRoute altRoute = alternativeRoutes[selectedRouteIndex.value - 1];
+
+        // Store the current main route
+        NavigationRoute mainRoute = currentRoute.value!;
+
+        // Set the main route as the selected route
+        currentRoute.value = selectedRoute;
+
+        // Replace the main route in the alternatives
+        alternativeRoutes[selectedRouteIndex.value - 1] = mainRoute;
+      }
+      // If we're switching between alternatives
+      else if (selectedRouteIndex.value > 0 && index > 0) {
+        // Store the current alternative route
+        NavigationRoute currentAlt = alternativeRoutes[selectedRouteIndex.value - 1];
+
+        // Store the selected alternative route
+        NavigationRoute selectedAlt = alternativeRoutes[index - 1];
+
+        // Swap the routes
+        alternativeRoutes[selectedRouteIndex.value - 1] = selectedAlt;
+        alternativeRoutes[index - 1] = currentAlt;
+
+        // Set the selected route as the main route
+        currentRoute.value = selectedAlt;
+      }
+
+      // Update the selected route index
+      selectedRouteIndex.value = index;
+
+      // Redraw the routes
+      _drawRouteOnMap();
+    } catch (e) {
+      DevLogs.logError('Error switching routes: $e');
+    }
   }
 
   // Get place categories
@@ -586,20 +773,45 @@ class NavigationController extends GetxController {
     voiceGuidanceEnabled.value = !voiceGuidanceEnabled.value;
   }
 
-  // Switch to alternative route
-  void switchToAlternativeRoute(int index) {
-    if (index < 0 || index >= alternativeRoutes.length) return;
+  // Helper method to sample points along a route at regular intervals
+  List<LatLng> _sampleRoutePoints(List<LatLng> routePoints, double intervalMeters) {
+    if (routePoints.isEmpty) return [];
 
-    NavigationRoute selectedRoute = alternativeRoutes[index];
-    NavigationRoute? currentMainRoute = currentRoute.value;
+    List<LatLng> sampledPoints = [routePoints.first];
+    double accumulatedDistance = 0;
 
-    if (currentMainRoute != null) {
-      // Swap routes
-      alternativeRoutes[index] = currentMainRoute;
-      currentRoute.value = selectedRoute;
+    for (int i = 1; i < routePoints.length; i++) {
+      LatLng prevPoint = routePoints[i - 1];
+      LatLng currentPoint = routePoints[i];
 
-      // Redraw routes
-      _drawRouteOnMap(selectedRoute);
+      double segmentDistance = _calculateDistance(
+          prevPoint.latitude,
+          prevPoint.longitude,
+          currentPoint.latitude,
+          currentPoint.longitude
+      );
+
+      accumulatedDistance += segmentDistance;
+
+      if (accumulatedDistance >= intervalMeters) {
+        sampledPoints.add(currentPoint);
+        accumulatedDistance = 0;
+      }
     }
+
+    // Always include the last point
+    if (sampledPoints.last != routePoints.last) {
+      sampledPoints.add(routePoints.last);
+    }
+
+    return sampledPoints;
+  }
+
+  // Calculate distance between two points in meters
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double p = 0.017453292519943295; // Math.PI / 180
+    final double a = 0.5 - cos((lat2 - lat1) * p) / 2 +
+        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
+    return 12742 * asin(sqrt(a)) * 1000; // 2 * R * 1000; R = 6371 km
   }
 }

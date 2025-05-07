@@ -15,7 +15,8 @@ class GoogleMapsService implements IMapsService {
   GoogleMapsService({required String apiKey}) : _apiKey = apiKey;
 
   @override
-  Future<List<SearchResult>> searchPlaces(String query, {LatLng? proximity}) async {
+  Future<List<SearchResult>> searchPlaces(String query,
+      {LatLng? proximity}) async {
     try {
       String url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
           '?query=$query'
@@ -63,7 +64,11 @@ class GoogleMapsService implements IMapsService {
   }
 
   @override
-  Future<NavigationRoute?> getDirections(LatLng origin, LatLng destination, { String profile = 'driving', List<LatLng> waypoints = const [],  bool alternatives = false, String language = 'en',}) async {
+  Future<NavigationRoute?> getDirections(LatLng origin, LatLng destination,
+      {String profile = 'driving',
+        List<LatLng> waypoints = const [],
+        bool alternatives = false,
+        String language = 'en'}) async {
     try {
       String url = 'https://maps.googleapis.com/maps/api/directions/json'
           '?origin=${origin.latitude},${origin.longitude}'
@@ -164,6 +169,99 @@ class GoogleMapsService implements IMapsService {
     }
   }
 
+  // Get directions with alternatives
+  Future<List<NavigationRoute>> getDirectionsWithAlternatives(
+      LatLng origin,
+      LatLng destination,
+      {String profile = 'driving', String language = 'en'}) async {
+    try {
+      String url = 'https://maps.googleapis.com/maps/api/directions/json'
+          '?origin=${origin.latitude},${origin.longitude}'
+          '&destination=${destination.latitude},${destination.longitude}'
+          '&mode=${_getGoogleMapsMode(profile)}'
+          '&alternatives=true'
+          '&language=$language'
+          '&key=$_apiKey';
+
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] != 'OK') {
+          DevLogs.logError('Google Directions API error: ${data['status']}');
+          return [];
+        }
+
+        final routes = data['routes'] as List;
+        List<NavigationRoute> navigationRoutes = [];
+
+        for (var route in routes) {
+          final legs = route['legs'] as List;
+
+          if (legs.isEmpty) continue;
+
+          // Extract steps
+          List<RouteStep> steps = [];
+          double totalDistance = 0;
+          double totalDuration = 0;
+
+          for (var leg in legs) {
+            totalDistance += leg['distance']['value'].toDouble();
+            totalDuration += leg['duration']['value'].toDouble();
+
+            final legSteps = leg['steps'] as List;
+
+            for (var step in legSteps) {
+              final startLocation = step['start_location'];
+              final endLocation = step['end_location'];
+
+              steps.add(RouteStep(
+                instruction: _stripHtmlTags(step['html_instructions']),
+                distance: step['distance']['value'].toDouble(),
+                duration: step['duration']['value'].toDouble(),
+                maneuver: step['maneuver'] ?? '',
+                startLatitude: startLocation['lat'],
+                startLongitude: startLocation['lng'],
+                endLatitude: endLocation['lat'],
+                endLongitude: endLocation['lng'],
+              ));
+            }
+          }
+
+          // Get start and end addresses
+          String startAddress = legs[0]['start_address'] ?? '';
+          String endAddress = legs[legs.length - 1]['end_address'] ?? '';
+
+          // Encode polyline for the route
+          String encodedPolyline = route['overview_polyline']['points'];
+
+          navigationRoutes.add(NavigationRoute(
+            id: _uuid.v4(),
+            distance: totalDistance,
+            duration: totalDuration / 60, // Convert to minutes
+            steps: steps,
+            geometry: encodedPolyline,
+            startLatitude: origin.latitude,
+            startLongitude: origin.longitude,
+            endLatitude: destination.latitude,
+            endLongitude: destination.longitude,
+            startAddress: startAddress,
+            endAddress: endAddress,
+          ));
+        }
+
+        return navigationRoutes;
+      } else {
+        DevLogs.logError('Failed to get directions with alternatives: ${response.statusCode}');
+        throw Exception('Failed to get directions with alternatives: ${response.statusCode}');
+      }
+    } catch (e) {
+      DevLogs.logError('Error getting directions with alternatives: $e');
+      return [];
+    }
+  }
+
   @override
   Future<List<LatLng>> getPreviewRoute({required List<LatLng> wayPoints}) async {
     try {
@@ -245,7 +343,8 @@ class GoogleMapsService implements IMapsService {
   }
 
   @override
-  Future<List<NavigationRoute>> getDirectionsWithServiceLocations(LatLng origin, LatLng destination, List<String> serviceTypes,) async {
+  Future<List<NavigationRoute>> getDirectionsWithServiceLocations(
+      LatLng origin, LatLng destination, List<String> serviceTypes) async {
     try {
       // First get the direct route
       NavigationRoute? directRoute = await getDirections(origin, destination);
@@ -297,6 +396,14 @@ class GoogleMapsService implements IMapsService {
                 endLongitude: routeWithService.endLongitude,
                 startAddress: routeWithService.startAddress,
                 endAddress: routeWithService.endAddress,
+                serviceInfo: {
+                  'id': service.id,
+                  'name': service.name,
+                  'address': service.address,
+                  'latitude': service.latitude,
+                  'longitude': service.longitude,
+                  'category': service.category ?? serviceType,
+                },
               );
 
               routes.add(routeWithService);
@@ -316,7 +423,8 @@ class GoogleMapsService implements IMapsService {
   }
 
   @override
-  Future<NavigationRoute?> getOptimizedRoute(LatLng origin, LatLng destination, List<LatLng> waypoints, ) async {
+  Future<NavigationRoute?> getOptimizedRoute(
+      LatLng origin, LatLng destination, List<LatLng> waypoints) async {
     try {
       String url = 'https://maps.googleapis.com/maps/api/directions/json'
           '?origin=${origin.latitude},${origin.longitude}'
@@ -429,12 +537,15 @@ class GoogleMapsService implements IMapsService {
   // Helper method to extract a category from place types
   String _getCategoryFromTypes(List types) {
     if (types.contains('gas_station')) return 'gas_station';
-    if (types.contains('car_repair') || types.contains('car_dealer')) return 'mechanic';
+    if (types.contains('car_repair') || types.contains('car_dealer'))
+      return 'mechanic';
     if (types.contains('car_wash')) return 'car_wash';
     if (types.contains('parking')) return 'parking';
-    if (types.contains('restaurant') || types.contains('food')) return 'restaurant';
+    if (types.contains('restaurant') || types.contains('food'))
+      return 'restaurant';
     if (types.contains('lodging') || types.contains('hotel')) return 'hotel';
-    if (types.contains('hospital') || types.contains('health')) return 'hospital';
+    if (types.contains('hospital') || types.contains('health'))
+      return 'hospital';
     if (types.contains('police')) return 'police';
     if (types.contains('charging_station')) return 'ev_charging';
     return 'other';
