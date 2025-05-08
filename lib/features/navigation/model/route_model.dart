@@ -58,6 +58,7 @@ class NavigationRoute {
   final double endLongitude;
   final String startAddress;
   final String endAddress;
+  final Map<String, dynamic>? serviceInfo;
 
   NavigationRoute({
     required this.id,
@@ -71,6 +72,7 @@ class NavigationRoute {
     required this.endLongitude,
     required this.startAddress,
     required this.endAddress,
+    this.serviceInfo,
   });
 
   factory NavigationRoute.fromJson(Map<String, dynamic> json) {
@@ -88,6 +90,7 @@ class NavigationRoute {
       endLongitude: json['endLongitude'].toDouble(),
       startAddress: json['startAddress'],
       endAddress: json['endAddress'],
+      serviceInfo: json['serviceInfo'],
     );
   }
 
@@ -104,6 +107,9 @@ class NavigationRoute {
       'endLongitude': endLongitude,
       'startAddress': startAddress,
       'endAddress': endAddress,
+      'serviceInfo': serviceInfo,
     };
   }
+
+  bool get hasServiceInfo => serviceInfo != null;
 }
