@@ -1174,6 +1174,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
       minutes = minutes % 60;
       return '$hours h ${minutes > 0 ? '$minutes min' : ''}';
     }
+
   }
 
   String _formatETA(double remainingSeconds) {
