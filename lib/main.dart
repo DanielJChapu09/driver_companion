@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:mymaptest/config/theme/app_theme.dart';
 import 'bindings/binding.dart';
 import 'core/constants/color_constants.dart';
 import 'core/routes/app_pages.dart';
@@ -27,8 +28,8 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       title: 'Smart Driver Companion',
       defaultTransition: Transition.cupertino,
-      theme: Palette.lightTheme,
-      darkTheme: Palette.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
       getPages: AppPages.routes,

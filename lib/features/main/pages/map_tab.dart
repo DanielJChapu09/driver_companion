@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/core/routes/app_pages.dart';
 import 'package:mymaptest/core/utils/logs.dart';
 import 'package:mymaptest/features/navigation/controller/navigation_controller.dart';
+import 'package:mymaptest/features/navigation/view/route_selection_screen.dart';
 import 'package:mymaptest/firebase_options.dart';
 import 'package:mymaptest/widgets/snackbar/custom_snackbar.dart';
 import '../../driver_behaviour/controller/driver_behaviour_controller.dart';
@@ -375,13 +376,8 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
           ),
 
           // Route preview card (only shown when destination is selected)
-          if (_selectedDestination != null)
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: _buildRoutePreviewCard(theme, isDark),
-            ),
+          // Navigation is now handled in _handleMapTap method
+
 
           // Continue navigation button (only shown when navigating)
           Obx(() {
@@ -443,12 +439,6 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
               );
             }
             return const SizedBox.shrink();
-          }),
-
-          // Route Preview Panel
-          Obx(() {
-            if (controller.currentRoute.value == null) return const SizedBox();
-            return _showingRoutePreview ? _buildRoutePreviewPanel(theme, isDark) : const SizedBox();
           }),
         ],
       ),
@@ -586,19 +576,18 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
             ),
             TextButton(
               onPressed: () => Get.toNamed(Routes.driverBehaviorScreen),
-              child: Text('View'),
               style: TextButton.styleFrom(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
+              child: Text('View'),
             ),
           ],
         ),
       ),
     );
   }
-
   // Handle map tap to select destination
   void _handleMapTap(LatLng coordinates) async {
     // Don't process taps if already loading or navigating
@@ -636,15 +625,20 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
           _selectedDestination = result;
         });
 
-        // Get directions to this location
+        // Navigate to route selection screen
         if (controller.currentLocation.value != null) {
-          await getDirections(
-            LatLng(
-              controller.currentLocation.value!.latitude,
-              controller.currentLocation.value!.longitude,
-            ),
-            LatLng(coordinates.latitude, coordinates.longitude),
+          LatLng origin = LatLng(
+            controller.currentLocation.value!.latitude,
+            controller.currentLocation.value!.longitude,
           );
+          LatLng destination = LatLng(coordinates.latitude, coordinates.longitude);
+
+          // Navigate to route selection screen
+          Get.to(() => RouteSelectionScreen(
+            origin: origin,
+            destination: destination,
+            destinationName: result.name.isNotEmpty ? result.name : result.address.split(',').first,
+          ));
         }
       } else {
         CustomSnackBar.showErrorSnackbar(
@@ -661,215 +655,6 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
         _isLoadingDestination = false;
       });
     }
-  }
-
-  // Build route preview card
-  Widget _buildRoutePreviewCard(ThemeData theme, bool isDark) {
-    if (_selectedDestination == null || controller.currentRoute.value == null) {
-      return const SizedBox.shrink();
-    }
-
-    final route = controller.currentRoute.value!;
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Destination name
-            Text(
-              _selectedDestination!.name,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-
-            // Address
-            Text(
-              _selectedDestination!.address,
-              style: TextStyle(
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                fontSize: 14,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-
-            SizedBox(height: 16),
-
-            // Route info
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  // Distance
-                  Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.straighten,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Distance',
-                            style: TextStyle(
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _formatDistance(route.distance),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Duration
-                  Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Duration',
-                            style: TextStyle(
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _formatDuration(route.duration),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // ETA
-                  Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.flag,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'ETA',
-                            style: TextStyle(
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _formatETA(route.duration),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            SizedBox(height: 16),
-
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      _showSavePlaceDialog(_selectedDestination!);
-                    },
-                    icon: Icon(Icons.star_border),
-                    label: Text('Save'),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      controller.startNavigation();
-                      Get.toNamed(Routes.navigationScreen);
-                    },
-                    icon: Icon(Icons.navigation),
-                    label: Text('Start'),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            SizedBox(height: 8),
-
-            // Close button
-            Center(
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _selectedDestination = null;
-                    _markers.clear();
-                    _polylines.clear();
-                  });
-                  controller.currentRoute.value = null;
-                },
-                icon: Icon(Icons.close),
-                label: Text('Close'),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   // Show dialog to save place
@@ -991,190 +776,6 @@ class _MapsTabState extends State<MapsTab> with SingleTickerProviderStateMixin {
     } else {
       return '$minutes min';
     }
-  }
-
-  // Format ETA
-  String _formatETA(double seconds) {
-    final now = DateTime.now();
-    final arrival = now.add(Duration(seconds: seconds.toInt()));
-
-    String period = arrival.hour >= 12 ? 'PM' : 'AM';
-    int hour = arrival.hour > 12 ? arrival.hour - 12 : (arrival.hour == 0 ? 12 : arrival.hour);
-    String minute = arrival.minute.toString().padLeft(2, '0');
-
-    return '$hour:$minute $period';
-  }
-
-  Widget _buildRoutePreviewPanel(ThemeData theme, bool isDark) {
-    final route = controller.currentRoute.value!;
-
-    // Format distance and duration
-    String distance = '';
-    if (route.distance < 1000) {
-      distance = '${route.distance.toInt()} m';
-    } else {
-      distance = '${(route.distance / 1000).toStringAsFixed(1)} km';
-    }
-
-    String duration = '';
-    if (route.duration < 60) {
-      duration = '${route.duration.toInt()} sec';
-    } else if (route.duration < 3600) {
-      duration = '${(route.duration / 60).toStringAsFixed(0)} min';
-    } else {
-      int hours = (route.duration / 3600).floor();
-      int minutes = ((route.duration % 3600) / 60).floor();
-      duration = '$hours h $minutes min';
-    }
-
-    return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 80,
-      left: 16,
-      right: 16,
-      child: Card(
-        elevation: 8,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-          Text(
-          route.endAddress.isEmpty ? 'Destination' : route.endAddress,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          SizedBox(height: 12),
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(
-                  children: [
-                    Icon(
-                      Icons.straighten,
-                      color: theme.colorScheme.primary,
-                      size: 20,
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      distance,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      'Distance',
-                      style: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                Column(
-                  children: [
-                    Icon(
-                      Icons.access_time,
-                      color: theme.colorScheme.primary,
-                      size: 20,
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      duration,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      'Duration',
-                      style: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                Column(
-                  children: [
-                    Icon(
-                      Icons.flag,
-                      color: theme.colorScheme.primary,
-                      size: 20,
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      _formatETA(route.duration),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      'ETA',
-                      style: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 16),
-          Row(
-              children: [
-          Expanded(
-          child: OutlinedButton.icon(
-          icon: Icon(Icons.star_border),
-          label: Text('Save'),
-          onPressed: _saveDestination,
-          style: OutlinedButton.styleFrom(
-            padding: EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      ),
-      SizedBox(width: 12),
-      Expanded(
-        child: ElevatedButton.icon(
-        icon: Icon(Icons.navigation),
-        label: Text('Start'),
-        onPressed: _startNavigation,
-        style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.symmetric(vertical: 12),
-        ),
-      ),
-    ),
-    ],
-    ),
-    SizedBox(height: 8),
-    Center(
-    child: TextButton.icon(
-    icon: Icon(Icons.close),
-    label: Text('Cancel'),
-    onPressed: _cancelRoutePreview,
-    style: TextButton.styleFrom(
-    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    ),
-    ),
-    ),
-    ],
-    ),
-    ),
-    ),
-    );
   }
 
   void _showMapStyleOptions() {
