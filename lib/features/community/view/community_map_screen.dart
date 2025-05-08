@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mymaptest/config/confidential/apikeys.dart';
+import 'package:mymaptest/features/community/view/community_screen.dart';
 import '../controller/community_controller.dart';
 import '../model/notifcation_model.dart';
 import 'notification_details_screen.dart';
@@ -126,7 +127,9 @@ class _CommunityMapScreenState extends State<CommunityMapScreen> {
       }),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Get.toNamed('/create-notification');
+          Get.to(
+              () => CommunityScreen()
+          );
         },
         child: Icon(Icons.add),
       ),
