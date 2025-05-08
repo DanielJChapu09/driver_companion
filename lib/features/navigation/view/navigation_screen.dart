@@ -812,12 +812,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                   _showStepsBottomSheet();
                 },
               ),
-              _buildControlButton(
-                icon: Icons.warning_amber_rounded,
-                label: 'Alert',
-                onTap: _showAlertDialog,
-                color: Colors.red,
-              ),
+
             ],
           ),
         ],
